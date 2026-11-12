@@ -17,6 +17,9 @@ url = f"https://api.cloudflare.com/client/v4/accounts/{acct}/ai/run/@cf/black-fo
 H = {"Authorization": f"Bearer {tok}"}
 prompt = "dark cinematic documentary still, abandoned lighthouse at night, fog, moody lighting, 16:9"
 
+st, _, body, _ = request(f"https://api.cloudflare.com/client/v4/accounts/{acct}/tokens/verify", headers=H)
+verify = {"http": st, "body": body[:300].decode("utf-8", "replace")}
+print("verify token:", verify)
 runs, ok, stop_reason = [], 0, None
 for i in range(limit):
     st, hd, body, secs = request(url, method="POST", headers=H, body={"prompt": prompt, "steps": 4}, timeout=180)
@@ -49,7 +52,7 @@ for i in range(limit):
         break
     runs.append(row)
 
-res = {"images_ok": ok, "requested_limit": limit, "drain": DRAIN, "stop_reason": stop_reason, "runs": runs[:30],
+res = {"token_verify": verify, "account_id_len": len(acct), "token_len": len(tok), "images_ok": ok, "requested_limit": limit, "drain": DRAIN, "stop_reason": stop_reason, "runs": runs[:30],
        "avg_sec": round(sum(r["sec"] for r in runs) / max(len(runs), 1), 2),
        "note": "Se DRAIN=true e parou por HTTP 429/4xx, images_ok ~ capacidade diaria real (10k neurons)."}
 md = (f"# FLUX (Cloudflare)\n\n- imagens geradas: **{ok}**\n- parou por: {stop_reason}\n"
