@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Instalar ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Benchmark (75 cenas)
         working-directory: scripts/phase0
         env: {PHASE0_OUT: "${{ github.workspace }}/results", SCENES: "75"}
@@ -81,9 +83,9 @@ jobs:
         with: {path: artifacts, pattern: "results-*", merge-multiple: true}
       - name: Publicar somente .md/.json no branch phase0-results
         run: |
-          mkdir -p out && find artifacts -maxdepth 1 \( -name '*.md' -o -name '*.json' \) -exec cp {} out/ \;
+          mkdir -p /tmp/out && find artifacts -maxdepth 1 \( -name '*.md' -o -name '*.json' \) -exec cp {} /tmp/out/ \;
           git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
-          git checkout --orphan phase0-results && git rm -rf . -q
-          cp out/* . 2>/dev/null || echo "sem resultados" > vazio.md
+          git checkout --orphan phase0-results && git rm -rf . -q && git clean -fdxq
+          cp /tmp/out/* . 2>/dev/null || echo "sem resultados" > vazio.md
           git add -A && git commit -qm "Resultados da Fase 0 (run ${{ github.run_id }})"
           git push -f origin phase0-results
