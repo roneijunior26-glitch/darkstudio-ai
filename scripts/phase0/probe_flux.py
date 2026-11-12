@@ -42,6 +42,7 @@ for i in range(limit):
                 row["format"] = "png"
                 row["size"] = struct.unpack(">II", img[16:24])
             if i == 0:  # so a primeira imagem fica nos artifacts (nao vai ao branch)
+                OUT.mkdir(parents=True, exist_ok=True)
                 (OUT / "sample_flux.bin").write_bytes(img)
         else:
             row["note"] = "200 sem imagem reconhecivel"
