@@ -6,6 +6,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from scan_secrets import scan_text  # noqa: E402
 
 
+def test_detects_google_key_new_format():
+    fake = "AQ." + "A" * 40
+    assert "chave Google API (novo formato)" in scan_text(f"k = {fake}")
+
+
 def test_detects_google_key():
     fake = "AIza" + "A" * 35
     assert "chave Google API" in scan_text(f"key = {fake}")

@@ -1,0 +1,89 @@
+name: Fase 0 - validacao de provedores
+on:
+  workflow_dispatch:
+    inputs:
+      run_ffmpeg: {description: "Benchmark FFmpeg", type: boolean, default: true}
+      run_tts: {description: "Teste Piper pt-BR", type: boolean, default: true}
+      run_gemini: {description: "Teste Gemini (precisa do secret)", type: boolean, default: true}
+      run_flux: {description: "Teste FLUX (precisa dos secrets)", type: boolean, default: true}
+      drain_flux: {description: "FLUX: gerar ate acabar a cota (mede capacidade diaria)", type: boolean, default: false}
+permissions:
+  contents: write
+jobs:
+  ffmpeg:
+    if: inputs.run_ffmpeg
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Benchmark (75 cenas)
+        working-directory: scripts/phase0
+        env: {PHASE0_OUT: "${{ github.workspace }}/results", SCENES: "75"}
+        run: python3 bench_ffmpeg.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: results-ffmpeg, path: results}
+  tts:
+    if: inputs.run_tts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install piper-tts
+      - name: Piper
+        working-directory: scripts/phase0
+        env: {PHASE0_OUT: "${{ github.workspace }}/results"}
+        run: python probe_tts.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: results-tts, path: results}
+  gemini:
+    if: inputs.run_gemini
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gemini
+        working-directory: scripts/phase0
+        env:
+          PHASE0_OUT: "${{ github.workspace }}/results"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python3 probe_gemini.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: results-gemini, path: results}
+  flux:
+    if: inputs.run_flux
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: FLUX
+        working-directory: scripts/phase0
+        env:
+          PHASE0_OUT: "${{ github.workspace }}/results"
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DRAIN: ${{ inputs.drain_flux }}
+        run: python3 probe_flux.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: results-flux, path: results}
+  publish:
+    needs: [ffmpeg, tts, gemini, flux]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {path: artifacts, pattern: "results-*", merge-multiple: true}
+      - name: Publicar somente .md/.json no branch phase0-results
+        run: |
+          mkdir -p out && find artifacts -maxdepth 1 \( -name '*.md' -o -name '*.json' \) -exec cp {} out/ \;
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan phase0-results && git rm -rf . -q
+          cp out/* . 2>/dev/null || echo "sem resultados" > vazio.md
+          git add -A && git commit -qm "Resultados da Fase 0 (run ${{ github.run_id }})"
+          git push -f origin phase0-results
