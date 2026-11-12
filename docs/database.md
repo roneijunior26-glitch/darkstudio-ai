@@ -1,6 +1,6 @@
 # Banco de dados
 
-Schema em `backend/migrations/0001_init.sql` (PostgreSQL / Supabase). **Estado: escrito, ainda não aplicado a um banco real.**
+Schema em `backend/migrations/0001_init.sql` (PostgreSQL / Supabase). **Estado: aplicado a um projeto Supabase real em 12/11/2026; os 11 testes de `backend/migrations/tests/rls_check.sql` passaram (OK em T1 a T9).**
 
 ## Convenções
 
@@ -31,6 +31,5 @@ YouTube e auditoria: `youtube_accounts`, `youtube_uploads`, `audit_logs`.
 
 ## Pendências
 
-- Aplicar a migration em um projeto Supabase e testar as políticas de RLS com dois usuários.
 - Função de cancelamento de tarefas.
 - Limite de tamanho por usuário para `tasks.payload`.

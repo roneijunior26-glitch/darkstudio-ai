@@ -29,10 +29,10 @@ Fonte completa do planejamento: documento "DarkStudio AI — Arquitetura, viabil
 
 | Item | Estado |
 |---|---|
-| Migration inicial com RLS (`backend/migrations/0001_init.sql`) | Escrita. **Ainda não aplicada a um Postgres**: validar no Supabase |
+| Migration inicial com RLS (`backend/migrations/0001_init.sql`) | Aplicada no Supabase; políticas de RLS testadas com 2 usuários (rls_check.sql) |
 | Contrato de fornecedores e guarda de custo | Implementado e testado |
 | `input_hash` e propagação de reconstrução | Implementado e testado |
-| Estados, backoff e SQL de reserva da fila | Implementado; SQL conferido com a migration por teste, **não executado em Postgres** |
+| Estados, backoff e SQL de reserva da fila | Implementado; SQL conferido com a migration por teste, **ainda não executado** (o loop do worker virá com testes em Postgres) |
 | Varredura de segredos + CI | Implementado (script testado); workflow ainda não rodou no GitHub |
 | Frontend (login, dashboard, projetos) | Planejado (próximo passo da Fase 1) |
 | Worker (loop de execução, adaptadores reais) | Planejado |
