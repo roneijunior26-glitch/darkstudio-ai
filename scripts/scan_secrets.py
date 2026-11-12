@@ -14,6 +14,7 @@ from pathlib import Path
 PATTERNS: dict[str, re.Pattern[str]] = {
     "chave privada": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     "chave Google API": re.compile(r"AIza[0-9A-Za-z_\-]{35}"),
+    "chave Google API (novo formato)": re.compile(r"\bAQ\.[A-Za-z0-9_\-]{30,}"),
     "JWT": re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     "segredo Supabase": re.compile(r"sb_secret_[A-Za-z0-9_\-]{10,}"),
     "token GitHub": re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),
