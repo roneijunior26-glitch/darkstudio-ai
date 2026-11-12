@@ -23,7 +23,7 @@ names = [m["name"].split("/")[-1] for m in models if "generateContent" in m.get(
 res["models_generateContent"] = names
 text_models = [n for n in names if "flash" in n and not any(x in n for x in ("image", "tts", "live", "audio", "preview-0", "exp"))]
 res["image_like_models"] = [n for n in names if "image" in n or "imagen" in n]
-pick = next((n for n in text_models if "lite" in n), text_models[0] if text_models else None)
+pick = "gemini-2.5-flash-lite" if "gemini-2.5-flash-lite" in names else (text_models[0] if text_models else None)
 res["picked_text_model"] = pick
 
 script = ("Em 1986, um farol abandonado na costa da Noruega voltou a emitir luz. Ninguem sabia quem o acendera. "
@@ -32,9 +32,13 @@ prompt = ("Divida o roteiro em cenas. Responda SOMENTE JSON: lista de objetos co
           "narration, image_prompt (ingles, estilo documentario sombrio), camera_move. Roteiro: " + script)
 
 if pick:
-    st, _, body, secs = request(f"{B}/models/{pick}:generateContent", method="POST", headers=H, timeout=90,
-                                body={"contents": [{"parts": [{"text": prompt}]}],
-                                      "generationConfig": {"responseMimeType": "application/json"}})
+    for attempt in range(4):
+        st, _, body, secs = request(f"{B}/models/{pick}:generateContent", method="POST", headers=H, timeout=90,
+                                    body={"contents": [{"parts": [{"text": prompt}]}],
+                                          "generationConfig": {"responseMimeType": "application/json"}})
+        if st not in (429, 500, 503):
+            break
+        time.sleep(5 * (attempt + 1))
     res["scene_split"] = {"http": st, "sec": round(secs, 2)}
     try:
         txt = json.loads(body)["candidates"][0]["content"]["parts"][0]["text"]
