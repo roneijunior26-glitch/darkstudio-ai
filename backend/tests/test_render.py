@@ -158,7 +158,9 @@ def test_render_mixes_music_and_survives_bad_track(tmp_path):
 
 def test_wrap_title():
     assert render.wrap_title("O que acontece se você cair em um buraco negro?") == ["O QUE ACONTECE", "SE VOCÊ CAIR EM", "UM BURACO NEGRO?"]
-    assert render.wrap_title("a " * 60)[-1].endswith("…") and len(render.wrap_title("a " * 60)) == 3
+    assert render.wrap_title("a " * 60)[-1].endswith("...") and len(render.wrap_title("a " * 60)) == 4
+    assert render.wrap_title("O buraco branco: o objeto que desafia tudo o que sabemos") == ["O BURACO BRANCO"]
+    assert render.wrap_title("Por que: curto") == ["POR QUE: CURTO"]
     assert render.wrap_title("") == ["VIDEO"]
 
 
