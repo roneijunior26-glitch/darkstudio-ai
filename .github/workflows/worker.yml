@@ -1,0 +1,31 @@
+name: Worker (processa a fila de tarefas)
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # sem custo; o GitHub pode atrasar alguns minutos
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: {group: worker, cancel-in-progress: false}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: https://xmflykobjxjtulgqttob.supabase.co
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      WORKER_MAX_SECONDS: "6000"
+    steps:
+      - name: Verificar segredos
+        id: chk
+        run: |
+          if [ -z "$SUPABASE_SERVICE_KEY" ]; then echo "::notice::SUPABASE_SERVICE_KEY nao configurado; nada a fazer."; echo "ok=false" >> "$GITHUB_OUTPUT"; else echo "ok=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.chk.outputs.ok == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.chk.outputs.ok == 'true'
+        with: {python-version: "3.12"}
+      - name: Executar worker
+        if: steps.chk.outputs.ok == 'true'
+        working-directory: backend
+        run: python -m app.workers.runner
