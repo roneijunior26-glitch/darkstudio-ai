@@ -88,3 +88,14 @@ def test_quota_query_has_no_plus_sign():
     gi.run({"payload": {"scene_id": "s1"}}, db, lambda p: JPEG, now=NOW)
     assert db.count_queries and all("+" not in q for q in db.count_queries)
     assert "updated_at=gte.2026-11-13T00:00:00Z" in db.count_queries[0]
+
+
+def test_flux_429_becomes_wait_not_failure():
+    from app.workers import cloudflare
+    db = Db()
+
+    def flux(prompt):
+        raise cloudflare.FluxQuota("HTTP 429: you have used up your daily free allocation of 10,000 neurons")
+    with pytest.raises(WaitQuota) as e:
+        gi.run({"payload": {"scene_id": "s1"}}, db, flux, now=NOW)
+    assert e.value.until == datetime(2026, 11, 14, 0, 5, tzinfo=timezone.utc)

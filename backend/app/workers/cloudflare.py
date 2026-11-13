@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import urllib.error
@@ -12,6 +13,12 @@ class FluxQuota(RuntimeError):
     pass
 
 
+def next_reset(now: datetime | None = None) -> datetime:
+    """Os 10.000 neurons gratis do Workers AI zeram a 00:00 UTC (21:00 em Brasilia); +5 min de folga."""
+    now = now or datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=5, second=0, microsecond=0) + timedelta(days=1)
+
+
 class FluxError(RuntimeError):
     pass
 
@@ -20,7 +27,7 @@ def generate(prompt: str, *, account: str | None = None, token: str | None = Non
     account = account or os.environ["CLOUDFLARE_ACCOUNT_ID"]
     token = token or os.environ["CLOUDFLARE_API_TOKEN"]
     url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
-    req = urllib.request.Request(url, data=json.dumps({"prompt": prompt, "steps": int(os.environ.get("FLUX_STEPS", "6"))}).encode(), method="POST",
+    req = urllib.request.Request(url, data=json.dumps({"prompt": prompt, "steps": int(os.environ.get("FLUX_STEPS", "4"))}).encode(), method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
