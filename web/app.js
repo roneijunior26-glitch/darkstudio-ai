@@ -91,9 +91,10 @@ function progressOf(allTasks) {
   const failed = tasks.some((t) => t.status === "FAILED");
   const running = tasks.find((t) => t.status === "RUNNING") ?? tasks.find((t) => ["QUEUED", "WAITING_PROVIDER", "PENDING", "WAITING_APPROVAL"].includes(t.status));
   const pct = total ? Math.round((done / total) * 100) : 0;
+  const waiting = tasks.some((t) => t.status === "WAITING_PROVIDER");
   let label = "Sem tarefas";
   if (total) label = failed ? "Falhou" : done === total ? "Concluído" : running ? (STEP[running.type] ?? running.type) + (running.status === "RUNNING" ? "…" : (running.status === "WAITING_APPROVAL" ? "" : " (na fila)")) : "Aguardando";
-  return { pct, label, failed, done, total };
+  return { pct, label, failed, done, total, waiting };
 }
 
 // capas (kind=thumbnail) por projeto: { project_id -> { key, url } }
@@ -171,6 +172,7 @@ async function viewProjects() {
           h("div", {},
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
             h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`),
+            pr.waiting && !pr.failed ? h("div", { class: "mut", style: "color:#e8b84a" }, "⏳ A cota grátis do dia acabou. O app continua sozinho quando ela voltar (depois das 21:00, horário de Brasília).") : null,
             pr.failed ? h("div", { class: "mut", style: "color:var(--err)" }, `Erro: ${(byProj.get(p.id) ?? []).find((t) => t.status === "FAILED")?.last_error ?? "desconhecido"}`) : null),
           p.status === "awaiting_approval" ? h("div", { class: "ready" }, "✅ Vídeo pronto! Baixe na aba ",
             h("a", { href: "#", onclick: (ev) => { ev.preventDefault(); setTab("ready"); } }, "Vídeos prontos"), ".") : null,

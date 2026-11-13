@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from ...providers.base import CostTier, UsageEstimate
 from ...providers.cost_guard import Decision, check
+from .. import cloudflare
 from ..errors import PermanentError, WaitQuota
 from .generate_image import daily_limit
 
@@ -73,7 +74,11 @@ def run(task: dict, db, llm, flux, compose, now: datetime | None = None) -> dict
     if guard.decision is Decision.WAIT_QUOTA:
         raise WaitQuota(guard.retry_after, guard.reason)
 
-    jpeg = compose(flux(spec["image_prompt"] + BG_SUFFIX), spec)
+    try:
+        bg = flux(spec["image_prompt"] + BG_SUFFIX)
+    except cloudflare.FluxQuota as e:
+        raise WaitQuota(cloudflare.next_reset(now), "cota diaria gratis da Cloudflare acabou") from e
+    jpeg = compose(bg, spec)
     key = f"{uid}/{pid}/thumb-{int(time.time())}.jpg"
     db.upload("media", key, jpeg, "image/jpeg")
     db.insert("media_assets", [{"user_id": uid, "project_id": pid, "kind": "thumbnail", "storage_backend": "supabase", "storage_key": key,
