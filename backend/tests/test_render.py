@@ -180,3 +180,44 @@ def test_make_thumbnail_and_upload(tmp_path):
     render_final.make_thumb(db, {"user_id": "u"}, "p", "Titulo", {"image": {"storage_key": "i1.jpg"}}, lambda b, k: img.read_bytes())
     assert db.up[1] == "u/p/thumbnail.jpg" and db.rows["media_assets"][0]["kind"] == "thumbnail"
     render_final.make_thumb(db, {"user_id": "u"}, "p", "T", {"image": {"storage_key": "i1.jpg"}}, lambda b, k: b"lixo")  # nao levanta
+
+
+def test_gh_release_publish_and_names(monkeypatch, tmp_path):
+    import io
+    import json as _json
+    from app.workers import gh_release
+    assert gh_release.ascii_name("O Buraco Negro: Vídeo?!") == "O-Buraco-Negro-Video.mp4"
+    assert gh_release.ascii_name("???") == "video.mp4"
+    monkeypatch.setenv("GITHUB_TOKEN", "t"); monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    f = tmp_path / "v.mp4"; f.write_bytes(b"12345")
+    calls = []
+
+    class R(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake(req, timeout=0):
+        calls.append((req.full_url, req.get_method()))
+        if req.full_url.endswith("/releases"):
+            assert _json.loads(req.data)["tag_name"].startswith("video-")
+            return R(b'{"id": 9}')
+        assert req.get_header("Content-length") == "5" and "name=Meu-video.mp4" in req.full_url
+        return R(b'{"browser_download_url": "https://github.com/o/r/releases/download/video-x/Meu-video.mp4"}')
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+    out = gh_release.publish(f, "Meu vídeo")
+    assert out["url"].endswith("Meu-video.mp4") and out["bytes"] == 5 and len(calls) == 2
+
+
+def test_default_publish_prefers_release_then_artifact(monkeypatch, tmp_path):
+    from app.workers import gh_release
+    for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "t"); monkeypatch.setenv("GITHUB_REPOSITORY", "o/r"); monkeypatch.setenv("GITHUB_RUN_ID", "5")
+    f = tmp_path / "x.mp4"; f.write_bytes(b"1")
+    monkeypatch.setattr(gh_release, "publish", lambda p, t: {"tag": "video-abc", "url": "https://github.com/o/r/releases/download/video-abc/x.mp4", "bytes": 1})
+    r = render_final.default_publish(f, "Titulo.mp4")
+    assert r["key"] == "release:video-abc" and r["url"].endswith("x.mp4") and not f.exists()
+    f.write_bytes(b"1")
+    monkeypatch.setattr(gh_release, "publish", lambda p, t: (_ for _ in ()).throw(gh_release.ReleaseError("403")))
+    r = render_final.default_publish(f, "Titulo.mp4")
+    assert r["key"] == "video-5" and f.exists()

@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .. import gdrive, render
+from .. import gdrive, gh_release, render
 from ..errors import PermanentError
 
 
@@ -54,7 +54,7 @@ def title_of(db, pid: str) -> str | None:
 
 
 def default_publish(path: Path, name: str) -> dict:
-    """Drive se configurado; senao (ou se o Drive falhar) deixa o arquivo para o artifact do GitHub (7 dias)."""
+    """Drive se configurado; senao Release do GitHub (download direto, sem prazo); por ultimo o artifact do GitHub (7 dias)."""
     if gdrive.configured():
         try:
             info = gdrive.upload(path, name)
@@ -62,6 +62,14 @@ def default_publish(path: Path, name: str) -> dict:
             return {"backend": "gdrive", "key": info["id"], "url": info["link"]}
         except gdrive.DriveError as e:
             print(f"[worker] Drive falhou, usando artifact do GitHub: {e}", flush=True)
+    if gh_release.configured():
+        try:
+            info = gh_release.publish(path, name[:-4])
+            path.unlink(missing_ok=True)  # ja esta no Release: nao precisa subir como artifact
+            # storage_backend so aceita supabase/gdrive/github_artifact; o prefixo "release:" distingue o Release do artifact
+            return {"backend": "github_artifact", "key": f"release:{info['tag']}", "url": info["url"]}
+        except gh_release.ReleaseError as e:
+            print(f"[worker] Release falhou, usando artifact do GitHub: {e}", flush=True)
     run_id, repo = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_REPOSITORY", "")
     return {"backend": "github_artifact", "key": f"video-{run_id}", "url": f"https://github.com/{repo}/actions/runs/{run_id}" if run_id else None}
 
