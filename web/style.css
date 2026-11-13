@@ -28,3 +28,4 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--tx);border
 .update{position:fixed;top:12px;right:12px;background:var(--card);border:1px solid var(--ac);border-radius:10px;padding:8px 14px;z-index:9}
 .thumb{width:128px;height:128px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:none}.thumb.ph{display:grid;place-items:center;color:var(--mut);font-size:12px;background:var(--bg)}
 .ready{border:1px solid var(--ok);border-radius:8px;padding:8px 12px;margin-top:8px}.ready a{color:var(--ok)}
+a.btn{background:var(--ac);color:#fff;border-radius:8px;padding:8px 14px;text-decoration:none;white-space:nowrap}

@@ -130,8 +130,8 @@ async function viewProjects() {
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
             h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`),
             pr.failed ? h("div", { class: "mut", style: "color:var(--err)" }, `Erro: ${(byProj.get(p.id) ?? []).find((t) => t.status === "FAILED")?.last_error ?? "desconhecido"}`) : null),
-          p.status === "awaiting_approval" ? h("div", { class: "ready", style: "flex-basis:100%" }, "✅ Vídeo pronto! Baixe em ",
-            h("a", { href: "https://github.com/roneijunior26-glitch/darkstudio-ai/actions/workflows/worker.yml", target: "_blank", rel: "noopener" }, "GitHub → Actions → execução do Worker → Artifacts"), " (fica 7 dias).") : null,
+          p.status === "awaiting_approval" ? h("div", { class: "ready", style: "flex-basis:100%" }, "✅ Vídeo pronto! Baixe na aba ",
+            h("a", { href: "#", onclick: (ev) => { ev.preventDefault(); setTab("ready"); } }, "Vídeos prontos"), ".") : null,
           h("div", { class: "row", style: "flex-basis:100%;gap:8px;flex-wrap:nowrap" },
             h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas"),
             pr.failed ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
@@ -237,8 +237,25 @@ async function viewVoices() {
     rows.length ? rows.map((v) => h("div", { class: "item" }, h("div", {}, h("strong", {}, v.name), h("div", { class: "mut" }, `${v.engine} · ${v.category ?? ""} · ${v.license}`)))) : h("p", { class: "mut" }, "Nenhuma voz. Rode a migration 0002 no Supabase.")));
 }
 
+async function viewReady() {
+  const rows = await load(sb.from("project_exports")
+    .select("id,created_at,projects(title),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
+  const mb = (b) => (b ? `${(b / 1048576).toFixed(1)} MB` : "");
+  const item = (r) => {
+    const a = r.media_assets || {}, drive = a.storage_backend === "gdrive";
+    const when = new Date(r.created_at);
+    const days = Math.max(0, 7 - Math.floor((Date.now() - when) / 86400000));
+    const note = drive ? "Salvo no seu Google Drive" : days > 0 ? `Baixe pelo GitHub (login necessário) — some em ~${days} dia(s)` : "Expirado no GitHub (artifact de 7 dias)";
+    return h("div", { class: "item" },
+      h("div", {}, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
+      a.origin_url && (drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, target: "_blank", rel: "noopener noreferrer" }, drive ? "Abrir / baixar" : "Baixar") : null);
+  };
+  app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
+    rows.length ? rows.map(item) : h("p", { class: "mut" }, "Nenhum vídeo pronto ainda. Quando um projeto terminar de renderizar, ele aparece aqui.")));
+}
+
 // ---------- navegacao ----------
-const TABS = { projects: ["Projetos", viewProjects], new: ["Novo projeto", viewNew], channels: ["Canais", viewChannels], voices: ["Vozes", viewVoices] };
+const TABS = { projects: ["Projetos", viewProjects], ready: ["Vídeos prontos", viewReady], new: ["Novo projeto", viewNew], channels: ["Canais", viewChannels], voices: ["Vozes", viewVoices] };
 function setTab(t) {
   tab = t;
   clearInterval(poll);

@@ -33,10 +33,14 @@ def test_zoompan_has_size_and_frames(cam):
 
 class Db:
     def __init__(self, scenes):
-        self.scenes, self.updates, self.inserted = scenes, [], []
+        self.scenes, self.updates, self.inserted, self.rows = scenes, [], [], {}
 
     def select(self, table, q=""):
-        return self.scenes
+        return [{"title": "Meu: Vídeo/Teste?"}] if table == "projects" else self.scenes
+
+    def insert(self, table, rows):
+        self.rows.setdefault(table, []).extend(rows)
+        return [{**r, "id": f"{table}-id"} for r in rows]
 
     def update(self, table, q, v):
         self.updates.append(v)
@@ -82,10 +86,37 @@ def test_full_render_with_real_ffmpeg(tmp_path):
     wav = tts.pcm_to_wav(b"\x10\x00" * 48000, 24000)  # 2 s
     store = {**imgs, "a1": wav, "a2": wav}
     db = Db([sc(1), sc(2)])
-    res = render_final.run({"project_id": "p"}, db, lambda b, k: store[k], outdir=str(tmp_path / "out"))
+    pub = lambda path, name: {"backend": "gdrive", "key": "drive123", "url": "https://drive/x", "name": name}
+    res = render_final.run({"project_id": "p", "user_id": "u"}, db, lambda b, k: store[k], outdir=str(tmp_path / "out"), publish=pub)
     assert res["scenes"] == 2 and res["duration_s"] == 4.6
     out = tmp_path / "out" / "p.mp4"
     info = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,width,height,r_frame_rate", "-of", "csv=p=0", str(out)],
                           capture_output=True, text=True).stdout
     assert "h264,1920,1080,30/1" in info and "aac" in info
     assert db.updates[0]["status"] == "rendering" and db.updates[-1]["status"] == "awaiting_approval"
+    assert res["stored_in"] == "gdrive"
+    asset = db.rows["media_assets"][0]
+    assert asset["kind"] == "export" and asset["storage_key"] == "drive123" and asset["bytes"] == out.stat().st_size
+    assert db.rows["project_exports"][0]["asset_id"] == "media_assets-id"
+
+
+def test_safe_name_and_default_publish_fallback(monkeypatch, tmp_path):
+    assert render_final.safe_name("Meu: Vídeo/Teste?") == "Meu Vídeo Teste"[:0] + "Meu VídeoTeste"
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.setenv("GITHUB_RUN_ID", "42")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    r = render_final.default_publish(tmp_path / "x.mp4", "x.mp4")
+    assert r == {"backend": "github_artifact", "key": "video-42", "url": "https://github.com/o/r/actions/runs/42"}
+
+
+def test_default_publish_drive_failure_falls_back(monkeypatch, tmp_path):
+    from app.workers import gdrive
+    for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
+        monkeypatch.setenv(k, "x")
+    monkeypatch.setenv("GITHUB_RUN_ID", "7")
+    monkeypatch.setattr(gdrive, "upload", lambda *a, **k: (_ for _ in ()).throw(gdrive.DriveError("boom")))
+    assert render_final.default_publish(tmp_path / "x.mp4", "x.mp4")["backend"] == "github_artifact"
+    f = tmp_path / "y.mp4"; f.write_bytes(b"1")
+    monkeypatch.setattr(gdrive, "upload", lambda *a, **k: {"id": "D", "link": "L", "bytes": 1})
+    assert render_final.default_publish(f, "y.mp4") == {"backend": "gdrive", "key": "D", "url": "L"}
+    assert not f.exists()
