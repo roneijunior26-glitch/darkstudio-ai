@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from . import cloudflare, gemini, tts
 from .errors import PermanentError, WaitQuota
-from .handlers import generate_audio, generate_image, render_final, split_scenes, voice_preview
+from .handlers import generate_audio, generate_image, generate_seo, render_final, split_scenes, voice_preview
 from .queue import retry_at, status_after_failure
 from .rest import Rest
 
@@ -25,6 +25,7 @@ def handlers(db: Rest):
         "split_scenes": lambda t: split_scenes.run(t, db, gemini.generate_json),
         "generate_image": lambda t: generate_image.run(t, db, cloudflare.generate),
         "generate_audio": lambda t: generate_audio.run(t, db, tts.synthesize),
+        "generate_seo": lambda t: generate_seo.run(t, db, gemini.generate_json),
         "voice_preview": lambda t: voice_preview.run(t, db, tts.synthesize),
         "render_final": lambda t: render_final.run(t, db, db.download),
     }
@@ -61,6 +62,12 @@ def enqueue_render_if_ready(db, task: dict) -> None:
                          "user_id,idempotency_key")
 
 
+def enqueue_seo_after_render(db, task: dict) -> None:
+    if task["type"] == "render_final" and task.get("project_id"):
+        db.insert_ignore("tasks", [{"user_id": task["user_id"], "project_id": task["project_id"], "type": "generate_seo", "status": "QUEUED",
+                                    "payload": {}, "idempotency_key": f"seo:{task['project_id']}"}], "user_id,idempotency_key")
+
+
 def run(db: Rest | None = None, max_seconds: int | None = None) -> int:
     db = db or Rest()
     max_seconds = max_seconds or int(os.environ.get("WORKER_MAX_SECONDS", "3000"))
@@ -81,6 +88,7 @@ def run(db: Rest | None = None, max_seconds: int | None = None) -> int:
             finish(db, task, None, fn(task))
             done += 1
             enqueue_render_if_ready(db, task)
+            enqueue_seo_after_render(db, task)
         except PermanentError as e:
             finish(db, task, e, permanent=True)
         except WaitQuota as e:

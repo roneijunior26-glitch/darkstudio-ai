@@ -367,9 +367,23 @@ async function viewMusic() {
     h("div", { class: "card" }, h("h3", {}, "Nova música"), field("Arquivo (mp3, wav, ogg, m4a)", file), field("Nome", name), field("Clima", mood), field("Licença", lic), field("Link de origem", src), btn));
 }
 
+const copyBtn = (getText, label = "Copiar") => h("button", { class: "ghost", type: "button", style: "flex:none;min-width:0;padding:4px 10px", onclick: async (ev) => {
+  try { await navigator.clipboard.writeText(getText()); const b = ev.target; b.textContent = "Copiado ✓"; setTimeout(() => (b.textContent = label), 1500); } catch (e) { fail(e); }
+} }, label);
+function seoBox(seo) {
+  if (!seo) return h("div", { class: "mut", style: "flex-basis:100%" }, "Textos do YouTube: sendo gerados (aparecem aqui em instantes). Se não aparecerem, rode a migration 0009 no Supabase.");
+  const desc = h("textarea", { readonly: true, style: "min-height:180px" }); desc.value = seo.description || "";
+  const tags = (seo.tags || []).join(", ");
+  return h("details", { style: "flex-basis:100%" }, h("summary", { style: "cursor:pointer;color:var(--ac)" }, "Textos para o YouTube (títulos, descrição, tags)"),
+    h("label", {}, "Títulos sugeridos"),
+    ...(seo.titles || []).map((t) => h("div", { class: "row", style: "gap:8px;flex-wrap:nowrap;align-items:center;margin-bottom:4px" }, h("span", { style: "flex:1;min-width:0" }, t), copyBtn(() => t))),
+    h("label", {}, "Descrição (já com capítulos)"), desc, copyBtn(() => desc.value, "Copiar descrição"),
+    h("label", {}, "Tags (cole no campo de tags do YouTube)"), h("div", { class: "mut", style: "word-break:break-word" }, tags), copyBtn(() => tags, "Copiar tags"));
+}
+
 async function viewReady() {
   const rows = await load(sb.from("project_exports")
-    .select("id,project_id,created_at,projects(title),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
+    .select("id,project_id,created_at,projects(title,seo),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
   const caps = await thumbsFor(rows.map((r) => r.project_id)).catch(() => new Map());
   const downCapa = (t) => h("button", { class: "ghost", onclick: async (ev) => {
     ev.target.disabled = true;
@@ -383,10 +397,10 @@ async function viewReady() {
     const days = Math.max(0, 7 - Math.floor((Date.now() - when) / 86400000));
     const note = drive ? "Salvo no seu Google Drive" : days > 0 ? `Baixe pelo GitHub (login necessário) — some em ~${days} dia(s)` : "Expirado no GitHub (artifact de 7 dias)";
     const cap = caps.get(r.project_id);
-    return h("div", { class: "item" }, capaImg(cap),
+    return h("div", { class: "item", style: "flex-wrap:wrap" }, capaImg(cap),
       h("div", { style: "flex:1;min-width:0" }, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
       cap ? downCapa(cap) : null,
-      a.origin_url && (drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, target: "_blank", rel: "noopener noreferrer" }, drive ? "Abrir / baixar" : "Baixar") : null);
+      a.origin_url && (drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, target: "_blank", rel: "noopener noreferrer" }, drive ? "Abrir / baixar" : "Baixar") : null, seoBox(r.projects?.seo));
   };
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
     rows.length ? rows.map(item) : h("p", { class: "mut" }, "Nenhum vídeo pronto ainda. Quando um projeto terminar de renderizar, ele aparece aqui.")));
