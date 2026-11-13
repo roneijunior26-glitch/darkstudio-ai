@@ -2,15 +2,33 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
 
-from .. import render
+from .. import gdrive, render
 from ..errors import PermanentError
 
 
-def run(task: dict, db, download, outdir: str | None = None, clip_fn=None) -> dict:
+def safe_name(title: str) -> str:
+    return re.sub(r"[^\w\- ]+", "", title).strip()[:80] or "video"
+
+
+def default_publish(path: Path, name: str) -> dict:
+    """Drive se configurado; senao (ou se o Drive falhar) deixa o arquivo para o artifact do GitHub (7 dias)."""
+    if gdrive.configured():
+        try:
+            info = gdrive.upload(path, name)
+            path.unlink(missing_ok=True)  # ja esta no Drive: nao precisa subir como artifact
+            return {"backend": "gdrive", "key": info["id"], "url": info["link"]}
+        except gdrive.DriveError as e:
+            print(f"[worker] Drive falhou, usando artifact do GitHub: {e}", flush=True)
+    run_id, repo = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_REPOSITORY", "")
+    return {"backend": "github_artifact", "key": f"video-{run_id}", "url": f"https://github.com/{repo}/actions/runs/{run_id}" if run_id else None}
+
+
+def run(task: dict, db, download, outdir: str | None = None, clip_fn=None, publish=None) -> dict:
     pid = task["project_id"]
     scenes = db.select("scenes", f"project_id=eq.{pid}&deleted_at=is.null&order=position"
                                  "&select=id,position,narration_text,camera_move,transition,duration_s,"
@@ -23,6 +41,8 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None) -> di
 
     if not render.have_ffmpeg():
         raise PermanentError("ffmpeg nao instalado no worker")
+    proj = db.select("projects", f"id=eq.{pid}&select=title")
+    title = safe_name(proj[0]["title"] if proj else pid)
     db.update("projects", f"id=eq.{pid}", {"status": "rendering"})
     clip_fn = clip_fn or render.render_clip
     out_dir = Path(outdir or os.environ.get("OUTPUT_DIR", "out"))
@@ -45,5 +65,12 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None) -> di
         shutil.move(str(final), target)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    size = target.stat().st_size
+    pub = (publish or default_publish)(target, f"{title}.mp4")
+    asset = db.insert("media_assets", [{
+        "user_id": task["user_id"], "project_id": pid, "kind": "export", "storage_backend": pub["backend"],
+        "storage_key": pub["key"], "bytes": size, "origin_url": pub["url"], "is_intermediate": False,
+        "license": "video gerado pelo usuario"}])[0]
+    db.insert("project_exports", [{"user_id": task["user_id"], "project_id": pid, "asset_id": asset["id"], "kind": "mp4"}])
     db.update("projects", f"id=eq.{pid}", {"status": "awaiting_approval"})
-    return {"file": target.name, "bytes": target.stat().st_size, "duration_s": round(total, 1), "scenes": len(scenes)}
+    return {"file": target.name, "bytes": size, "duration_s": round(total, 1), "scenes": len(scenes), "stored_in": pub["backend"]}
