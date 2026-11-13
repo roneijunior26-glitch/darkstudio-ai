@@ -15,13 +15,22 @@ Pesquisa de 12/11/2026. Limites mudam; tudo marcado "a validar" precisa de teste
 | Oracle, Koyeb, Hugging Face (Docker), Render | Hospedagem | Exigem cartão ou plano pago | Descartados |
 | Vídeo por IA (Wan, LTX, etc.) | Clipes opcionais | Sem API gratuita confiável | Desligado por padrão |
 
+## Resultados da Fase 0 (12/11/2026)
+
+- **FFmpeg** (runner ubuntu, 4 núcleos, 16 GB): 75 cenas de 8 s em 1080p30 com zoompan renderizam em ~7,4 min (5,9 s/cena); concat 9 s; mux 13 s; corte rápido `-c copy` 0,24 s; corte preciso 7,7 s; `xfade` funciona (12 s por par). Tamanho do arquivo não medido (imagem sintética com ruído).
+- **Piper pt-BR**: ~0,13 s de processamento por segundo de áudio. Vozes `faber`, `cadu`, `jeff` (medium) são CC0; `edresson` (low) é CC BY 4.0. Falta escolher a voz ouvindo as amostras.
+- **Gemini** (plano grátis): `gemini-3.5-flash-lite` divide roteiro em JSON válido (~3 s); rajada de 12 chamadas sem 429; `gemini-2.5-flash-lite` não aceita usuários novos (nome do modelo deve ser configurável); modelos de imagem retornam 429 (cota zero no grátis); 503 ocasional exige retry.
+- **FLUX** (token com permissão Workers AI): 3 imagens JPEG de 290–360 KB, ~2,9 s cada. Capacidade diária real ainda não medida.
+
 ## Checklist da Fase 0
 
-- [ ] FLUX: neurons reais por imagem 1024×576 e 1920×1080
-- [ ] Gemini: limites reais de texto com a chave criada (sem billing)
-- [ ] Piper e Kokoro em pt-BR: qualidade e licença da voz
-- [ ] FFmpeg em runner do GitHub: tempo para renderizar 10 min em 1080p
-- [ ] Corte rápido (`-c copy`) e envio ao Google Drive
+- [x] FFmpeg em runner do GitHub: tempo para renderizar 10 min em 1080p
+- [x] Corte rápido (`-c copy`) e corte preciso
+- [x] Gemini: texto, JSON de cenas e limite de taxa
+- [x] Piper pt-BR: velocidade e licença das vozes
+- [ ] Piper: escolher a voz ouvindo as amostras
+- [ ] FLUX: qualidade visual e capacidade diária real (teste "drain")
+- [ ] Envio do MP4 ao Google Drive (precisa do OAuth)
 - [ ] Disparo do workflow por agendador gratuito ou botão
 
 ## Política de custo
