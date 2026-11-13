@@ -73,9 +73,19 @@ async function signUrls(keys) {
     for (const d of data ?? []) if (d.signedUrl) signed.set(d.path, { url: d.signedUrl, exp: Date.now() + 3300_000 });
   }
 }
+const autoQueued = new Set(); // projetos cuja geracao pendente ja foi enfileirada automaticamente nesta sessao
+async function enqueueMissing(projectId, sc) {
+  const mk = (x, type, pre) => ({ user_id: user.id, project_id: projectId, type, status: "QUEUED", payload: { scene_id: x.id }, idempotency_key: `${pre}:${x.id}` });
+  const rows = [...sc.filter((x) => !x.image).map((x) => mk(x, "generate_image", "img")), ...sc.filter((x) => !x.audio_asset_id).map((x) => mk(x, "generate_audio", "aud"))];
+  if (!rows.length) return 0;
+  const { error } = await sb.from("tasks").upsert(rows, { onConflict: "user_id,idempotency_key", ignoreDuplicates: true });
+  if (error) throw error;
+  return rows.length;
+}
 const autoOpened = new Set(); // projetos cujas cenas ja foram abertas automaticamente (o usuario pode fechar)
 
-function progressOf(tasks) {
+function progressOf(allTasks) {
+  const tasks = allTasks.filter((t) => t.type !== "approve_storyboard"); // etapa antiga, nao usada mais
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "COMPLETED").length;
   const failed = tasks.some((t) => t.status === "FAILED");
@@ -100,6 +110,14 @@ async function viewProjects() {
     }
     const scenes = new Map();
     for (const id of openScenes) scenes.set(id, await load(sb.from("scenes").select("id,user_id,position,narration_text,image_prompt,est_duration_s,duration_s,audio_asset_id,image:media_assets!image_asset_id(storage_key)").eq("project_id", id).is("deleted_at", null).order("position")));
+    for (const [pid, sc] of scenes) {
+      const ts = byProj.get(pid) ?? [];
+      const active = ts.some((t) => ["generate_image", "generate_audio"].includes(t.type) && !["COMPLETED", "FAILED", "CANCELLED"].includes(t.status));
+      if (!autoQueued.has(pid) && !active && sc.some((x) => !x.image || !x.audio_asset_id)) {
+        autoQueued.add(pid);
+        enqueueMissing(pid, sc).then((n) => n && toast("Geração de imagens e narração enfileirada automaticamente.")).catch(() => autoQueued.delete(pid));
+      }
+    }
     await signUrls([...scenes.values()].flat().map((x) => x.image?.storage_key).filter(Boolean)).catch(() => {});
     app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Projetos"),
       rows.length ? rows.map((p) => {
@@ -113,20 +131,15 @@ async function viewProjects() {
             h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`)),
           p.status === "awaiting_approval" ? h("div", { class: "ready", style: "flex-basis:100%" }, "✅ Vídeo pronto! Baixe em ",
             h("a", { href: "https://github.com/roneijunior26-glitch/darkstudio-ai/actions/workflows/worker.yml", target: "_blank", rel: "noopener" }, "GitHub → Actions → execução do Worker → Artifacts"), " (fica 7 dias).") : null,
-          h("div", { style: "flex-basis:100%" }, h("button", { class: "ghost", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas")),
+          h("div", { class: "row", style: "flex-basis:100%;gap:8px;flex-wrap:nowrap" },
+            h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas"),
+            sc && sc.some((x) => !x.image || !x.audio_asset_id) ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
+              ev.target.disabled = true;
+              try { const n = await enqueueMissing(p.id, sc); toast(n ? "Imagens e narração na fila." : "Nada a gerar."); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
+            } }, "Gerar imagens e narração") : null),
           sc ? h("div", { style: "flex-basis:100%" }, sc.length ? sc.map((x) => h("div", { class: "item", style: "justify-content:flex-start;align-items:flex-start" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
-            h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas."),
-            sc.some((x) => !x.image || !x.audio_asset_id) ? h("button", { class: "ghost", onclick: async (ev) => {
-              ev.target.disabled = true;
-              try {
-                const mk = (x, type, pre) => ({ user_id: user.id, project_id: p.id, type, status: "QUEUED", payload: { scene_id: x.id }, idempotency_key: `${pre}:${x.id}` });
-                const rowsT = [...sc.filter((x) => !x.image).map((x) => mk(x, "generate_image", "img")), ...sc.filter((x) => !x.audio_asset_id).map((x) => mk(x, "generate_audio", "aud"))];
-                const { error } = await sb.from("tasks").upsert(rowsT, { onConflict: "user_id,idempotency_key", ignoreDuplicates: true });
-                if (error) throw error;
-                toast("Imagens e narração na fila."); viewProjects().catch(fail);
-              } catch (e) { fail(e); ev.target.disabled = false; }
-            } }, "Gerar imagens e narração que faltam") : null) : null);
+            h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null);
       }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
   };
   await draw();
