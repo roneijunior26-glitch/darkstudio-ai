@@ -71,5 +71,28 @@ class Rest:
         except urllib.error.HTTPError as e:
             raise RestError(f"upload {bucket}/{path} -> HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}") from None
 
+    def _storage(self, method: str, path: str, body: dict):
+        req = urllib.request.Request(f"{self.url}/storage/v1/{path}", data=json.dumps(body).encode(), method=method,
+                                     headers={"apikey": self.key, "Authorization": f"Bearer {self.key}", "Content-Type": "application/json"})
+        try:
+            raw = urllib.request.urlopen(req, timeout=60).read()
+        except urllib.error.HTTPError as e:
+            raise RestError(f"storage {method} {path} -> HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}") from None
+        return json.loads(raw) if raw else None
+
+    def storage_list(self, bucket: str, prefix: str) -> list[dict]:
+        """Itens diretos de uma 'pasta' (pastas vem com id nulo)."""
+        out, offset = [], 0
+        while True:
+            page = self._storage("POST", f"object/list/{bucket}", {"prefix": prefix, "limit": 1000, "offset": offset, "sortBy": {"column": "name", "order": "asc"}}) or []
+            out += page
+            if len(page) < 1000:
+                return out
+            offset += 1000
+
+    def storage_remove(self, bucket: str, paths: list[str]):
+        for i in range(0, len(paths), 100):
+            self._storage("DELETE", f"object/{bucket}", {"prefixes": paths[i:i + 100]})
+
     def rpc(self, fn: str, args: dict | None = None):
         return self._call("POST", f"rpc/{fn}", args or {})

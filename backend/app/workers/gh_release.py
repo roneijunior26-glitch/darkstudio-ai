@@ -51,3 +51,21 @@ def publish(path: Path, title: str) -> dict:
         asset = _call(urllib.request.Request(f"{UPLOADS}/repos/{repo}/releases/{rel['id']}/assets?name={name}", method="POST", data=f,
                                              headers={**hdr, "Content-Type": "video/mp4", "Content-Length": str(size)}), timeout=3600)
     return {"tag": tag, "url": asset["browser_download_url"], "bytes": size}
+
+
+def delete(tag: str) -> bool:
+    """Apaga o Release e a tag. False se ja nao existia."""
+    repo, token = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"]
+    hdr = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    try:
+        rel = _call(urllib.request.Request(f"{API}/repos/{repo}/releases/tags/{tag}", headers=hdr))
+    except ReleaseError as e:
+        if "HTTP 404" in str(e):
+            return False
+        raise
+    _call(urllib.request.Request(f"{API}/repos/{repo}/releases/{rel['id']}", method="DELETE", headers=hdr))
+    try:
+        _call(urllib.request.Request(f"{API}/repos/{repo}/git/refs/tags/{tag}", method="DELETE", headers=hdr))
+    except ReleaseError:
+        pass  # a tag pode ja ter sumido junto com o release
+    return True

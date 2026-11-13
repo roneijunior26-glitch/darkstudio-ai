@@ -110,10 +110,29 @@ async function thumbsFor(projectIds) {
 }
 const capaImg = (t, cls = "capa") => (t?.url ? h("img", { class: cls, src: t.url, alt: "Capa do vídeo", loading: "lazy" }) : null);
 
+async function enqueueProjectJob(projectId, mode) {
+  await load(sb.from("tasks").insert({ user_id: user.id, project_id: null, type: "delete_project", status: "QUEUED", priority: 5, payload: { project_id: projectId, mode }, idempotency_key: `del:${mode}:${projectId}:${Date.now()}` }).select("id"));
+}
+const deleteProjectBtn = (p, after) => h("button", { class: "ghost danger", onclick: async (ev) => {
+  if (!confirm(`Excluir DE VEZ o projeto “${p.title}”, com vídeo, capa, imagens e áudios? Isso não pode ser desfeito.`)) return;
+  ev.target.disabled = true;
+  try {
+    await enqueueProjectJob(p.id, "delete");
+    await load(sb.from("projects").update({ deleted_at: new Date().toISOString() }).eq("id", p.id).select("id"));
+    toast("Projeto excluído. Os arquivos são apagados em segundo plano."); after();
+  } catch (e) { fail(e); ev.target.disabled = false; }
+} }, "Excluir");
+const freeSpaceBtn = (p) => h("button", { class: "ghost", title: "Apaga imagens e áudios das cenas; o vídeo e a capa ficam", onclick: async (ev) => {
+  if (!confirm("Liberar espaço apagando as imagens e áudios das cenas? O vídeo pronto e a capa continuam. Não dá para refazer o vídeo depois sem gerar tudo de novo.")) return;
+  ev.target.disabled = true;
+  try { await enqueueProjectJob(p.id, "free_space"); toast("Liberando espaço em segundo plano."); } catch (e) { fail(e); }
+  ev.target.disabled = false;
+} }, "Liberar espaço");
+
 async function viewHome() {
-  const count = async (table) => { const { count: n, error } = await sb.from(table).select("id", { count: "exact", head: true }); if (error) throw error; return n ?? 0; };
+  const count = async (table) => { let q = sb.from(table).select("id", { count: "exact", head: true }); if (table === "projects") q = q.is("deleted_at", null); const { count: n, error } = await q; if (error) throw error; return n ?? 0; };
   const [nProj, nReady, nMusic, nVoice, recent] = await Promise.all([count("projects"), count("project_exports"), count("music_assets"), count("voice_profiles"),
-    load(sb.from("projects").select("id,title,status,created_at").order("created_at", { ascending: false }).limit(4))]);
+    load(sb.from("projects").select("id,title,status,created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(4))]);
   const caps = await thumbsFor(recent.map((p) => p.id)).catch(() => new Map());
   const go = (t) => () => setTab(t);
   const stat = (ic, n, label, t) => h("div", { class: "stat", style: "cursor:pointer", onclick: go(t) }, h("span", { class: "ic" }, ic), h("div", {}, h("b", {}, String(n)), h("span", { class: "mut" }, label)));
@@ -181,7 +200,8 @@ async function viewProjects() {
             pr.failed ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
               ev.target.disabled = true;
               try { const { data, error } = await sb.rpc("retry_failed_tasks", { p_project: p.id }); if (error) throw error; toast(`${data} tarefa(s) devolvida(s) à fila.`); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
-            } }, "Tentar de novo as que falharam") : null),
+            } }, "Tentar de novo as que falharam") : null,
+            deleteProjectBtn(p, () => viewProjects().catch(fail))),
           sc ? h("div", { class: "scenes" }, sc.length ? sc.map((x) => h("div", { class: "scene" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
             h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null));
@@ -385,7 +405,7 @@ function seoBox(seo) {
 
 async function viewReady() {
   const rows = await load(sb.from("project_exports")
-    .select("id,project_id,created_at,projects(title,seo),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
+    .select("id,project_id,created_at,projects!inner(id,title,seo,deleted_at),media_assets(storage_backend,bytes,origin_url)").is("projects.deleted_at", null).order("created_at", { ascending: false }));
   const caps = await thumbsFor(rows.map((r) => r.project_id)).catch(() => new Map());
   const downCapa = (t) => h("button", { class: "ghost", onclick: async (ev) => {
     ev.target.disabled = true;
@@ -409,7 +429,7 @@ async function viewReady() {
     const cap = caps.get(r.project_id);
     return h("div", { class: "item", style: "flex-wrap:wrap" }, capaImg(cap),
       h("div", { style: "flex:1;min-width:0" }, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
-      cap ? downCapa(cap) : null, newCapa(r),
+      cap ? downCapa(cap) : null, newCapa(r), freeSpaceBtn(r.projects), deleteProjectBtn(r.projects, () => viewReady().catch(fail)),
       a.origin_url && (release || drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, ...(release ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" }) }, release ? "⬇ Baixar vídeo" : drive ? "Abrir / baixar" : "Baixar") : null, seoBox(r.projects?.seo));
   };
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
