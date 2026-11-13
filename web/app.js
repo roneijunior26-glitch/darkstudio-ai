@@ -65,6 +65,7 @@ const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imag
 const STATUS_PT = { draft: "rascunho", scripting: "roteiro", storyboard: "storyboard", producing: "produzindo", rendering: "renderizando", awaiting_approval: "aguardando aprovação", completed: "concluído", failed: "falhou" };
 let poll = null;
 const openScenes = new Set();
+const autoOpened = new Set(); // projetos cujas cenas ja foram abertas automaticamente (o usuario pode fechar)
 
 function progressOf(tasks) {
   const total = tasks.length;
@@ -86,6 +87,9 @@ async function viewProjects() {
     ]);
     const byProj = new Map();
     for (const t of tasks) (byProj.get(t.project_id) ?? byProj.set(t.project_id, []).get(t.project_id)).push(t);
+    for (const [pid, ts] of byProj) {
+      if (!autoOpened.has(pid) && ts.some((t) => t.type === "split_scenes" && t.status === "COMPLETED")) { autoOpened.add(pid); openScenes.add(pid); }
+    }
     const scenes = new Map();
     for (const id of openScenes) scenes.set(id, await load(sb.from("scenes").select("position,narration_text,image_prompt,est_duration_s").eq("project_id", id).is("deleted_at", null).order("position")));
     app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Projetos"),
@@ -104,7 +108,7 @@ async function viewProjects() {
       }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
   };
   await draw();
-  poll = setInterval(() => { if (tab === "projects" && !document.hidden) draw().catch(() => {}); }, 5000);
+  poll = setInterval(() => { if (tab === "projects" && !document.hidden) draw().catch(() => {}); }, 3000);
 }
 
 async function viewNew() {
@@ -201,6 +205,7 @@ function setTab(t) {
   $("nav").replaceChildren(...Object.entries(TABS).map(([k, [label]]) => h("button", { class: k === tab ? "on" : "", onclick: () => setTab(k) }, label)));
   TABS[t][1]().catch(fail);
 }
+document.addEventListener("visibilitychange", () => { if (!document.hidden && tab === "projects" && user) viewProjects().catch(() => {}); });
 $("logout").addEventListener("click", () => sb.auth.signOut());
 
 function onSession(session) {
@@ -214,3 +219,19 @@ function onSession(session) {
 }
 sb.auth.onAuthStateChange((_e, session) => onSession(session));
 sb.auth.getSession().then(({ data }) => onSession(data.session));
+
+// ---------- aviso de nova versao (o navegador guarda o site em cache por ate 10 min) ----------
+let loadedVersion = null;
+async function checkVersion() {
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const { v } = await r.json();
+    if (loadedVersion === null) { loadedVersion = v; return; }
+    if (v !== loadedVersion && !$("update")) {
+      document.body.append(h("div", { id: "update", class: "update" }, "Nova versão disponível. ", h("button", { class: "pri", style: "margin:0 0 0 8px;padding:4px 12px", onclick: () => location.reload() }, "Atualizar")));
+    }
+  } catch {}
+}
+checkVersion();
+setInterval(checkVersion, 60000);
