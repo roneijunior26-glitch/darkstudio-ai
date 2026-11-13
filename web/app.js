@@ -111,6 +111,8 @@ async function viewProjects() {
           h("div", { style: "flex-basis:100%" },
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
             h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`)),
+          p.status === "awaiting_approval" ? h("div", { class: "ready", style: "flex-basis:100%" }, "✅ Vídeo pronto! Baixe em ",
+            h("a", { href: "https://github.com/roneijunior26-glitch/darkstudio-ai/actions/workflows/worker.yml", target: "_blank", rel: "noopener" }, "GitHub → Actions → execução do Worker → Artifacts"), " (fica 7 dias).") : null,
           h("div", { style: "flex-basis:100%" }, h("button", { class: "ghost", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas")),
           sc ? h("div", { style: "flex-basis:100%" }, sc.length ? sc.map((x) => h("div", { class: "item", style: "justify-content:flex-start;align-items:flex-start" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
