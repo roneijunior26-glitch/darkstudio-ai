@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from . import cloudflare, gemini, tts
 from .errors import PermanentError, WaitQuota
-from .handlers import generate_audio, generate_image, split_scenes
+from .handlers import generate_audio, generate_image, render_final, split_scenes
 from .queue import retry_at, status_after_failure
 from .rest import Rest
 
@@ -25,6 +25,7 @@ def handlers(db: Rest):
         "split_scenes": lambda t: split_scenes.run(t, db, gemini.generate_json),
         "generate_image": lambda t: generate_image.run(t, db, cloudflare.generate),
         "generate_audio": lambda t: generate_audio.run(t, db, tts.synthesize),
+        "render_final": lambda t: render_final.run(t, db, db.download),
     }
 
 
@@ -47,6 +48,18 @@ def finish(db: Rest, task: dict, error: Exception | None, result: dict | None = 
     db.update("tasks", f"id=eq.{tid}", values)
 
 
+def enqueue_render_if_ready(db, task: dict) -> None:
+    """Quando TODAS as cenas tem imagem e narracao, cria (uma unica vez) a tarefa de render."""
+    if task["type"] not in ("generate_image", "generate_audio") or not task.get("project_id"):
+        return
+    pid = task["project_id"]
+    scenes = db.select("scenes", f"project_id=eq.{pid}&deleted_at=is.null&select=image_asset_id,audio_asset_id")
+    if scenes and all(s["image_asset_id"] and s["audio_asset_id"] for s in scenes):
+        db.insert_ignore("tasks", [{"user_id": task["user_id"], "project_id": pid, "type": "render_final", "status": "QUEUED",
+                                    "payload": {}, "idempotency_key": f"render:{pid}", "timeout_s": 3600}],
+                         "user_id,idempotency_key")
+
+
 def run(db: Rest | None = None, max_seconds: int | None = None) -> int:
     db = db or Rest()
     max_seconds = max_seconds or int(os.environ.get("WORKER_MAX_SECONDS", "3000"))
@@ -66,6 +79,7 @@ def run(db: Rest | None = None, max_seconds: int | None = None) -> int:
                 raise PermanentError(f"tipo de tarefa desconhecido: {task['type']}")
             finish(db, task, None, fn(task))
             done += 1
+            enqueue_render_if_ready(db, task)
         except PermanentError as e:
             finish(db, task, e, permanent=True)
         except WaitQuota as e:

@@ -30,7 +30,7 @@ jobs:
       - name: Dependencias de audio (Kokoro)
         if: steps.chk.outputs.ok == 'true'
         run: |
-          sudo apt-get install -y -qq espeak-ng >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq espeak-ng ffmpeg fonts-dejavu-core >/dev/null
           pip install -q -r backend/requirements-worker.txt
       - uses: actions/cache@v4
         if: steps.chk.outputs.ok == 'true'
@@ -38,5 +38,13 @@ jobs:
       - name: Executar worker
         if: steps.chk.outputs.ok == 'true'
         working-directory: backend
-        env: {KOKORO_DIR: .kokoro}
+        env: {KOKORO_DIR: .kokoro, OUTPUT_DIR: out}
         run: python -m app.workers.runner
+      - name: Publicar videos prontos (artifact, 7 dias)
+        if: always() && steps.chk.outputs.ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_id }}
+          path: backend/out/*.mp4
+          retention-days: 7
+          if-no-files-found: ignore

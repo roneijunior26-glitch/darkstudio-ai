@@ -41,6 +41,17 @@ class Rest:
     def delete(self, table: str, query: str):
         return self._call("DELETE", f"{table}?{query}")
 
+    def insert_ignore(self, table: str, rows, conflict: str):
+        return self._call("POST", f"{table}?on_conflict={conflict}", rows, prefer="resolution=ignore-duplicates,return=representation")
+
+    def download(self, bucket: str, path: str) -> bytes:
+        req = urllib.request.Request(f"{self.url}/storage/v1/object/{bucket}/{path}",
+                                     headers={"apikey": self.key, "Authorization": f"Bearer {self.key}"})
+        try:
+            return urllib.request.urlopen(req, timeout=120).read()
+        except urllib.error.HTTPError as e:
+            raise RestError(f"download {bucket}/{path} -> HTTP {e.code}") from None
+
     def count(self, table: str, query: str = "") -> int:
         headers = {"apikey": self.key, "Authorization": f"Bearer {self.key}", "Prefer": "count=exact", "Range": "0-0"}
         req = urllib.request.Request(f"{self.url}/rest/v1/{table}?{query}&select=id", headers=headers)
