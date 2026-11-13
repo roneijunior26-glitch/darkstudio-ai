@@ -89,7 +89,9 @@ def run(task: dict, db, llm) -> dict:
                                "est_duration_s": round(len(_words(s["narration"])) / WORDS_PER_SECOND, 1)})
     inserted = db.insert("scenes", scene_rows)
     db.update("projects", f"id=eq.{project_id}", {"status": "producing"})
-    # geracao automatica (sem aprovacao): uma tarefa de imagem por cena; reexecucao nao duplica (idempotency_key)
+    # geracao automatica (sem aprovacao): uma tarefa de imagem e uma de narracao por cena; reexecucao nao duplica (idempotency_key)
     db.insert("tasks", [{"user_id": uid, "project_id": project_id, "type": "generate_image", "status": "QUEUED",
-                         "payload": {"scene_id": r["id"]}, "idempotency_key": f"img:{r['id']}"} for r in inserted])
+                         "payload": {"scene_id": r["id"]}, "idempotency_key": f"img:{r['id']}"} for r in inserted]
+              + [{"user_id": uid, "project_id": project_id, "type": "generate_audio", "status": "QUEUED",
+                  "payload": {"scene_id": r["id"]}, "idempotency_key": f"aud:{r['id']}"} for r in inserted])
     return {"chapters": len(chapters), "scenes": len(scene_rows)}
