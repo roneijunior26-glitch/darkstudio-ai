@@ -157,28 +157,32 @@ async function viewProjects() {
       }
     }
     await signUrls([...scenes.values()].flat().map((x) => x.image?.storage_key).filter(Boolean)).catch(() => {});
-    app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Projetos"),
+    app.replaceChildren(h("div", { class: "plist" }, h("h2", {}, "Projetos"),
       rows.length ? rows.map((p) => {
         const pr = progressOf(byProj.get(p.id) ?? []);
         const sc = scenes.get(p.id);
-        return h("div", { class: "item", style: "flex-wrap:wrap" },
-          h("div", {}, h("strong", {}, p.title), h("div", { class: "mut" }, `${p.channels?.name ?? "—"} · ${new Date(p.created_at).toLocaleString("pt-BR")}`)),
-          h("span", { class: "tag" }, STATUS_PT[p.status] ?? p.status),
-          h("div", { style: "flex-basis:100%" },
+        const done = p.status === "awaiting_approval" || p.status === "completed";
+        return h("section", { class: `pcard${pr.failed ? " bad" : done ? " ok" : ""}` },
+          h("div", { class: "phead" },
+            h("div", { class: "av" }, (p.title || "?").trim().charAt(0).toUpperCase()),
+            h("div", { class: "ptitle" }, h("strong", {}, p.title), h("div", { class: "mut" }, `${p.channels?.name ?? "—"} · ${new Date(p.created_at).toLocaleString("pt-BR")}`)),
+            h("span", { class: `pill ${pr.failed ? "bad" : done ? "ok" : "run"}` }, pr.failed ? "falhou" : done ? "pronto" : (STATUS_PT[p.status] ?? p.status))),
+          h("div", { class: "pbody" },
+          h("div", {},
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
             h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`),
             pr.failed ? h("div", { class: "mut", style: "color:var(--err)" }, `Erro: ${(byProj.get(p.id) ?? []).find((t) => t.status === "FAILED")?.last_error ?? "desconhecido"}`) : null),
-          p.status === "awaiting_approval" ? h("div", { class: "ready", style: "flex-basis:100%" }, "✅ Vídeo pronto! Baixe na aba ",
+          p.status === "awaiting_approval" ? h("div", { class: "ready" }, "✅ Vídeo pronto! Baixe na aba ",
             h("a", { href: "#", onclick: (ev) => { ev.preventDefault(); setTab("ready"); } }, "Vídeos prontos"), ".") : null,
-          h("div", { class: "row", style: "flex-basis:100%;gap:8px;flex-wrap:nowrap" },
+          h("div", { class: "pactions" },
             h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas"),
             pr.failed ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
               ev.target.disabled = true;
               try { const { data, error } = await sb.rpc("retry_failed_tasks", { p_project: p.id }); if (error) throw error; toast(`${data} tarefa(s) devolvida(s) à fila.`); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
             } }, "Tentar de novo as que falharam") : null),
-          sc ? h("div", { style: "flex-basis:100%" }, sc.length ? sc.map((x) => h("div", { class: "item", style: "justify-content:flex-start;align-items:flex-start" },
+          sc ? h("div", { class: "scenes" }, sc.length ? sc.map((x) => h("div", { class: "scene" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
-            h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null);
+            h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null));
       }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
   };
   await draw();
