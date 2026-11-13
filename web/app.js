@@ -61,18 +61,19 @@ const niches = () => load(sb.from("niche_presets").select("id,name,visual_style,
 const channels = () => load(sb.from("channels").select("id,name,tone,audience,niche_preset_id,default_voice_id").order("name"));
 
 // ---------- telas ----------
-const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imagens", generate_audio: "Gerando narração", build_subtitles: "Legendas", render_clip: "Montando cenas", render_final: "Renderizando vídeo", upload: "Enviando" };
+const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imagens", generate_audio: "Gerando narração", build_subtitles: "Legendas", render_clip: "Montando cenas", render_final: "Renderizando vídeo", upload: "Enviando", approve_storyboard: "Aguardando sua revisão do storyboard" };
 const STATUS_PT = { draft: "rascunho", scripting: "roteiro", storyboard: "storyboard", producing: "produzindo", rendering: "renderizando", awaiting_approval: "aguardando aprovação", completed: "concluído", failed: "falhou" };
 let poll = null;
+const openScenes = new Set();
 
 function progressOf(tasks) {
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "COMPLETED").length;
   const failed = tasks.some((t) => t.status === "FAILED");
-  const running = tasks.find((t) => t.status === "RUNNING") ?? tasks.find((t) => ["QUEUED", "WAITING_PROVIDER", "PENDING"].includes(t.status));
+  const running = tasks.find((t) => t.status === "RUNNING") ?? tasks.find((t) => ["QUEUED", "WAITING_PROVIDER", "PENDING", "WAITING_APPROVAL"].includes(t.status));
   const pct = total ? Math.round((done / total) * 100) : 0;
   let label = "Sem tarefas";
-  if (total) label = failed ? "Falhou" : done === total ? "Concluído" : running ? (STEP[running.type] ?? running.type) + (running.status === "RUNNING" ? "…" : " (na fila)") : "Aguardando";
+  if (total) label = failed ? "Falhou" : done === total ? "Concluído" : running ? (STEP[running.type] ?? running.type) + (running.status === "RUNNING" ? "…" : (running.status === "WAITING_APPROVAL" ? "" : " (na fila)")) : "Aguardando";
   return { pct, label, failed, done, total };
 }
 
@@ -85,15 +86,21 @@ async function viewProjects() {
     ]);
     const byProj = new Map();
     for (const t of tasks) (byProj.get(t.project_id) ?? byProj.set(t.project_id, []).get(t.project_id)).push(t);
+    const scenes = new Map();
+    for (const id of openScenes) scenes.set(id, await load(sb.from("scenes").select("position,narration_text,image_prompt,est_duration_s").eq("project_id", id).is("deleted_at", null).order("position")));
     app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Projetos"),
       rows.length ? rows.map((p) => {
         const pr = progressOf(byProj.get(p.id) ?? []);
+        const sc = scenes.get(p.id);
         return h("div", { class: "item", style: "flex-wrap:wrap" },
           h("div", {}, h("strong", {}, p.title), h("div", { class: "mut" }, `${p.channels?.name ?? "—"} · ${new Date(p.created_at).toLocaleString("pt-BR")}`)),
           h("span", { class: "tag" }, STATUS_PT[p.status] ?? p.status),
           h("div", { style: "flex-basis:100%" },
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
-            h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`)));
+            h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`)),
+          h("div", { style: "flex-basis:100%" }, h("button", { class: "ghost", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas")),
+          sc ? h("div", { style: "flex-basis:100%" }, sc.length ? sc.map((x) => h("div", { class: "item" }, h("div", {},
+            h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ~${x.est_duration_s}s`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null);
       }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
   };
   await draw();
