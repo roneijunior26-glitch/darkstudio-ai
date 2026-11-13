@@ -101,7 +101,7 @@ async function viewProjects() {
   const draw = async () => {
     const [rows, tasks] = await Promise.all([
       load(sb.from("projects").select("id,title,status,created_at,channels(name)").is("deleted_at", null).order("created_at", { ascending: false })),
-      load(sb.from("tasks").select("project_id,type,status")),
+      load(sb.from("tasks").select("project_id,type,status,last_error")),
     ]);
     const byProj = new Map();
     for (const t of tasks) (byProj.get(t.project_id) ?? byProj.set(t.project_id, []).get(t.project_id)).push(t);
@@ -128,11 +128,16 @@ async function viewProjects() {
           h("span", { class: "tag" }, STATUS_PT[p.status] ?? p.status),
           h("div", { style: "flex-basis:100%" },
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
-            h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`)),
+            h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`),
+            pr.failed ? h("div", { class: "mut", style: "color:var(--err)" }, `Erro: ${(byProj.get(p.id) ?? []).find((t) => t.status === "FAILED")?.last_error ?? "desconhecido"}`) : null),
           p.status === "awaiting_approval" ? h("div", { class: "ready", style: "flex-basis:100%" }, "✅ Vídeo pronto! Baixe em ",
             h("a", { href: "https://github.com/roneijunior26-glitch/darkstudio-ai/actions/workflows/worker.yml", target: "_blank", rel: "noopener" }, "GitHub → Actions → execução do Worker → Artifacts"), " (fica 7 dias).") : null,
           h("div", { class: "row", style: "flex-basis:100%;gap:8px;flex-wrap:nowrap" },
             h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: () => { openScenes.has(p.id) ? openScenes.delete(p.id) : openScenes.add(p.id); viewProjects().catch(fail); } }, sc ? "Ocultar cenas" : "Ver cenas"),
+            pr.failed ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
+              ev.target.disabled = true;
+              try { const { data, error } = await sb.rpc("retry_failed_tasks", { p_project: p.id }); if (error) throw error; toast(`${data} tarefa(s) devolvida(s) à fila.`); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
+            } }, "Tentar de novo as que falharam") : null,
             sc && sc.some((x) => !x.image || !x.audio_asset_id) ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
               ev.target.disabled = true;
               try { const n = await enqueueMissing(p.id, sc); toast(n ? "Imagens e narração na fila." : "Nada a gerar."); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }

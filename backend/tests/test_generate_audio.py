@@ -22,6 +22,7 @@ class Db:
                 "channels": [{"default_voice_id": None, "niche_preset_id": None}]}[table]
 
     def count(self, table, q=""):
+        self.count_queries = getattr(self, "count_queries", []) + [q]
         return self.used
 
     def upload(self, *a):
@@ -73,3 +74,9 @@ def test_quota_wait_daily_vs_minute():
     assert tts.quota_wait("PerMinute", NOW).minute == 1 and tts.quota_wait("x", NOW).second == 30
     late = datetime(2026, 11, 13, 9, tzinfo=timezone.utc)
     assert tts.quota_wait("PerDay", late) == datetime(2026, 11, 14, 8, tzinfo=timezone.utc)
+
+
+def test_audio_quota_query_has_no_plus_sign():
+    db = Db()
+    ga.run({"payload": {"scene_id": "s1"}}, db, lambda text, voice: WAV, now=NOW)
+    assert db.count_queries and all("+" not in q for q in db.count_queries)

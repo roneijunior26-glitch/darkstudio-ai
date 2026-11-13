@@ -19,6 +19,7 @@ class Db:
         return [self.scene] if self.scene else []
 
     def count(self, table, q=""):
+        self.count_queries = getattr(self, "count_queries", []) + [q]
         return self.used
 
     def upload(self, bucket, path, data, ctype):
@@ -80,3 +81,10 @@ def test_runner_puts_task_in_waiting_provider_without_spending_attempt(monkeypat
     runner.run(db, max_seconds=5)
     v = db.updates[-1]
     assert v["status"] == "WAITING_PROVIDER" and v["attempts"] == 1 and v["run_after"] == until.isoformat()
+
+
+def test_quota_query_has_no_plus_sign():
+    db = Db()
+    gi.run({"payload": {"scene_id": "s1"}}, db, lambda p: JPEG, now=NOW)
+    assert db.count_queries and all("+" not in q for q in db.count_queries)
+    assert "updated_at=gte.2026-11-13T00:00:00Z" in db.count_queries[0]

@@ -43,7 +43,7 @@ def run(task: dict, db, synth, now: datetime | None = None) -> dict:
 
     voice = pick_voice(db, scene["project_id"])
     if voice["engine"] == "gemini":  # so o Gemini tem cota; Kokoro e local
-        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        midnight = now.astimezone(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")  # sem "+": o servidor leria como espaco
         used = db.count("tasks", f"type=eq.generate_audio&status=eq.COMPLETED&updated_at=gte.{midnight}")
         guard = check(tier=CostTier.FREE, authorized=True, estimate=UsageEstimate("request", 1), used_today=used,
                       daily_limit=None, conservative_limit=daily_limit(), now=now)

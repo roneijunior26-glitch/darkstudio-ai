@@ -28,7 +28,7 @@ def run(task: dict, db, flux, now: datetime | None = None) -> dict:
     if not scene["image_prompt"]:
         raise PermanentError("cena sem image_prompt")
 
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    midnight = now.astimezone(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")  # sem "+": o servidor leria como espaco
     used = db.count("tasks", f"type=eq.generate_image&status=eq.COMPLETED&updated_at=gte.{midnight}")
     guard = check(tier=CostTier.FREE, authorized=True, estimate=UsageEstimate("image", 1), used_today=used,
                   daily_limit=None, conservative_limit=daily_limit(), now=now)
