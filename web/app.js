@@ -386,6 +386,13 @@ async function viewReady() {
     try { const { data, error } = await sb.storage.from("media").createSignedUrl(t.key, 600, { download: "capa.jpg" }); if (error) throw error; location.href = data.signedUrl; } catch (e) { fail(e); }
     ev.target.disabled = false;
   } }, "Baixar capa");
+  const newCapa = (r) => h("button", { class: "ghost", onclick: async (ev) => {
+    ev.target.disabled = true;
+    try {
+      await load(sb.from("tasks").insert({ user_id: user.id, project_id: r.project_id, type: "generate_thumbnail", status: "QUEUED", priority: 5, payload: {}, idempotency_key: `thumb:${r.project_id}:${Date.now()}` }).select("id"));
+      toast("Nova capa na fila. Em ~2 min, volte a esta aba (ou clique em Vídeos prontos) para ver.");
+    } catch (e) { fail(e); ev.target.disabled = false; }
+  } }, "Nova capa (IA)");
   const mb = (b) => (b ? `${(b / 1048576).toFixed(1)} MB` : "");
   const item = (r) => {
     const a = r.media_assets || {}, drive = a.storage_backend === "gdrive";
@@ -396,7 +403,7 @@ async function viewReady() {
     const cap = caps.get(r.project_id);
     return h("div", { class: "item", style: "flex-wrap:wrap" }, capaImg(cap),
       h("div", { style: "flex:1;min-width:0" }, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
-      cap ? downCapa(cap) : null,
+      cap ? downCapa(cap) : null, newCapa(r),
       a.origin_url && (release || drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, ...(release ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" }) }, release ? "⬇ Baixar vídeo" : drive ? "Abrir / baixar" : "Baixar") : null, seoBox(r.projects?.seo));
   };
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
