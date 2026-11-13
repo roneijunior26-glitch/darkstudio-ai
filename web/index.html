@@ -7,12 +7,13 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header id="top" hidden>
-    <strong>DarkStudio AI</strong>
-    <nav id="nav"></nav>
-    <span id="who"></span>
-    <button id="logout" class="ghost">Sair</button>
-  </header>
+  <div id="top" hidden>
+    <aside id="side">
+      <div class="brand"><span class="logo">▶</span><div><strong>DarkStudio AI</strong><div class="mut">Crie. Edite. Publique.</div></div></div>
+      <nav id="nav"></nav>
+      <div class="user"><span id="who"></span><button id="logout" class="ghost">Sair</button></div>
+    </aside>
+  </div>
   <main id="app"></main>
   <div id="toast" role="status"></div>
   <script type="module" src="app.js"></script>

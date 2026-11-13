@@ -5,7 +5,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 const app = $("app");
 let user = null;
-let tab = "projects";
+let tab = "home";
 
 // ---------- utilidades (sempre textContent: nunca innerHTML com dados) ----------
 function h(tag, attrs = {}, ...kids) {
@@ -94,6 +94,30 @@ function progressOf(allTasks) {
   let label = "Sem tarefas";
   if (total) label = failed ? "Falhou" : done === total ? "Concluído" : running ? (STEP[running.type] ?? running.type) + (running.status === "RUNNING" ? "…" : (running.status === "WAITING_APPROVAL" ? "" : " (na fila)")) : "Aguardando";
   return { pct, label, failed, done, total };
+}
+
+async function viewHome() {
+  const count = async (table) => { const { count: n, error } = await sb.from(table).select("id", { count: "exact", head: true }); if (error) throw error; return n ?? 0; };
+  const [nProj, nReady, nMusic, nVoice, recent] = await Promise.all([count("projects"), count("project_exports"), count("music_assets"), count("voice_profiles"),
+    load(sb.from("projects").select("id,title,status,created_at").order("created_at", { ascending: false }).limit(4))]);
+  const go = (t) => () => setTab(t);
+  const stat = (ic, n, label, t) => h("div", { class: "stat", style: "cursor:pointer", onclick: go(t) }, h("span", { class: "ic" }, ic), h("div", {}, h("b", {}, String(n)), h("span", { class: "mut" }, label)));
+  const pill = (st) => h("span", { class: `pill ${st === "awaiting_approval" || st === "completed" ? "ok" : st === "failed" ? "bad" : "run"}` }, st === "awaiting_approval" ? "pronto" : (STATUS_PT[st] ?? st));
+  const quick = (ic, t, sub, tab2) => h("button", { onclick: go(tab2) }, h("span", { style: "font-size:20px" }, ic), h("strong", {}, t), h("span", { class: "mut" }, sub));
+  app.replaceChildren(
+    h("div", { class: "hero" }, h("h1", {}, "Transforme suas ideias em ", h("em", {}, "vídeos incríveis!")),
+      h("p", {}, "Cole o roteiro, escolha canal, voz e música, e o DarkStudio gera o documentário completo."),
+      h("button", { class: "pri", style: "margin:0", onclick: go("new") }, "🚀 Criar novo projeto →")),
+    h("div", { class: "stats" }, stat("📁", nProj, "Projetos criados", "projects"), stat("🎬", nReady, "Vídeos prontos", "ready"), stat("🎵", nMusic, "Músicas na biblioteca", "music"), stat("🎙", nVoice, "Vozes de IA", "voices")),
+    h("div", { class: "cols" },
+      h("div", { class: "card" }, h("div", { class: "row", style: "justify-content:space-between;align-items:center;margin-bottom:6px" }, h("h2", { style: "margin:0;flex:none;min-width:0" }, "Seus projetos recentes"), h("a", { href: "#", style: "color:var(--ac);flex:none;min-width:0", onclick: (e) => { e.preventDefault(); setTab("projects"); } }, "Ver todos →")),
+        recent.length ? recent.map((p) => h("div", { class: "proj" }, h("div", { class: "av" }, (p.title || "?").trim().charAt(0).toUpperCase()),
+          h("div", {}, h("strong", {}, p.title), h("span", { class: "mut" }, new Date(p.created_at).toLocaleString("pt-BR"))), pill(p.status),
+          p.status === "awaiting_approval" ? h("button", { class: "ghost", onclick: go("ready") }, "Baixar") : h("button", { class: "ghost", onclick: go("projects") }, "Ver")))
+          : h("p", { class: "mut" }, "Nenhum projeto ainda. Clique em “Criar novo projeto”.")),
+      h("div", { class: "card" }, h("h2", {}, "⚡ Acesso rápido"), h("div", { class: "quick" },
+        quick("🎞", "Novo projeto", "Comece a criar", "new"), quick("🎵", "Músicas", "Explore a biblioteca", "music"),
+        quick("🎙", "Vozes", "Ouça as vozes", "voices"), quick("📡", "Canais", "Gerencie seus canais", "channels")))));
 }
 
 async function viewProjects() {
@@ -347,11 +371,11 @@ async function viewReady() {
 }
 
 // ---------- navegacao ----------
-const TABS = { projects: ["Projetos", viewProjects], ready: ["Vídeos prontos", viewReady], music: ["Músicas", viewMusic], new: ["Novo projeto", viewNew], channels: ["Canais", viewChannels], voices: ["Vozes", viewVoices] };
+const TABS = { home: ["Início", viewHome, "🏠"], projects: ["Projetos", viewProjects, "📁"], ready: ["Vídeos prontos", viewReady, "🎬"], music: ["Músicas", viewMusic, "🎵"], new: ["Novo projeto", viewNew, "➕"], channels: ["Canais", viewChannels, "📡"], voices: ["Vozes", viewVoices, "🎙"] };
 function setTab(t) {
   tab = t;
   clearInterval(poll);
-  $("nav").replaceChildren(...Object.entries(TABS).map(([k, [label]]) => h("button", { class: k === tab ? "on" : "", onclick: () => setTab(k) }, label)));
+  $("nav").replaceChildren(...Object.entries(TABS).map(([k, [label, , icon]]) => h("button", { class: k === tab ? "on" : "", onclick: () => setTab(k) }, h("span", { class: "ic" }, icon), label)));
   TABS[t][1]().catch(fail);
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && tab === "projects" && user) viewProjects().catch(() => {}); });
