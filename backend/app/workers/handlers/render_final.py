@@ -28,6 +28,31 @@ def pick_music(db, user_id: str, proj: dict):
     return random.choice(rows) if rows else None
 
 
+def make_thumb(db, task: dict, pid: str, title: str, first_scene: dict, download) -> None:
+    """Capa do video (best-effort: falhar aqui nunca derruba o render)."""
+    work = Path(tempfile.mkdtemp(prefix="thumb-"))
+    try:
+        img = work / f"cena{Path(first_scene['image']['storage_key']).suffix or '.jpg'}"
+        img.write_bytes(download("media", first_scene["image"]["storage_key"]))
+        out = work / "capa.jpg"
+        render.make_thumbnail(img, title_of(db, pid) or title, out)
+        data = out.read_bytes()
+        key = f"{task['user_id']}/{pid}/thumbnail.jpg"
+        db.upload("media", key, data, "image/jpeg")
+        db.insert("media_assets", [{"user_id": task["user_id"], "project_id": pid, "kind": "thumbnail", "storage_backend": "supabase",
+                                    "storage_key": key, "bytes": len(data), "provider": "ffmpeg", "is_intermediate": False,
+                                    "license": "capa gerada a partir da imagem da cena 1"}])
+    except Exception as e:  # noqa: BLE001
+        print(f"[worker] sem capa ({e})", flush=True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def title_of(db, pid: str) -> str | None:
+    rows = db.select("projects", f"id=eq.{pid}&select=title")
+    return rows[0]["title"] if rows and rows[0].get("title") else None
+
+
 def default_publish(path: Path, name: str) -> dict:
     """Drive se configurado; senao (ou se o Drive falhar) deixa o arquivo para o artifact do GitHub (7 dias)."""
     if gdrive.configured():
@@ -88,6 +113,7 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None, publi
         shutil.move(str(final), target)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    make_thumb(db, task, pid, title, scenes[0], download)
     size = target.stat().st_size
     pub = (publish or default_publish)(target, f"{title}.mp4")
     asset = db.insert("media_assets", [{
