@@ -20,7 +20,7 @@ def generate(prompt: str, *, account: str | None = None, token: str | None = Non
     account = account or os.environ["CLOUDFLARE_ACCOUNT_ID"]
     token = token or os.environ["CLOUDFLARE_API_TOKEN"]
     url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
-    req = urllib.request.Request(url, data=json.dumps({"prompt": prompt, "steps": 4}).encode(), method="POST",
+    req = urllib.request.Request(url, data=json.dumps({"prompt": prompt, "steps": int(os.environ.get("FLUX_STEPS", "6"))}).encode(), method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
