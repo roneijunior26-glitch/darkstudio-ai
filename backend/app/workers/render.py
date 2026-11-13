@@ -108,5 +108,37 @@ def mix_music(video: Path, music: Path, out: Path, duration: float, gain: float 
                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{duration:.2f}", "-movflags", "+faststart", str(out)], cwd=out.parent)
 
 
+FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+def wrap_title(title: str, width: int = 16, max_lines: int = 3) -> list[str]:
+    """Quebra o titulo em ate 3 linhas MAIUSCULAS curtas (corta com reticencias se for longo)."""
+    lines, cur = [], ""
+    for w in title.upper().split():
+        if cur and len(cur) + 1 + len(w) > width:
+            lines.append(cur); cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip(" ,.:;!?") + "…"
+    return lines or ["VIDEO"]
+
+
+def make_thumbnail(image: Path, title: str, out: Path) -> None:
+    """Capa 1280x720: imagem da 1a cena (contraste/saturacao), faixa escura a esquerda e titulo grande com contorno."""
+    lines = wrap_title(title)
+    size = max(56, min(112, int(840 / (max(len(l) for l in lines) * 0.76)), 300 // len(lines)))  # cabe na faixa escura (~840 px) e na altura
+    txt = out.with_suffix(".txt")
+    txt.write_text("\n".join(lines), encoding="utf-8")
+    vf = ("crop=iw:trunc(iw*9/16/2)*2,scale=1280:720:flags=lanczos,eq=contrast=1.12:saturation=1.25:brightness=-0.03,"
+          "drawbox=x=0:y=0:w=960:h=720:color=black@0.55:t=fill,drawbox=x=0:y=0:w=14:h=720:color=0x14c99a@1:t=fill,"
+          f"drawtext=fontfile={FONT_BOLD}:textfile={txt.name}:fontsize={size}:line_spacing=14:fontcolor=white:"
+          "borderw=6:bordercolor=black:x=60:y=(h-text_h)/2")
+    run_ffmpeg(["-i", image.name, "-vf", vf, "-frames:v", "1", "-q:v", "2", str(out)], cwd=out.parent)
+
+
 def have_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None

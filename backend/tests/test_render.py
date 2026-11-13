@@ -154,3 +154,27 @@ def test_render_mixes_music_and_survives_bad_track(tmp_path):
         assert out.stat().st_size > 0 and abs(res["duration_s"] - 2.3) < 0.1
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout
         assert "video" in probe and "audio" in probe
+
+
+def test_wrap_title():
+    assert render.wrap_title("O que acontece se você cair em um buraco negro?") == ["O QUE ACONTECE", "SE VOCÊ CAIR EM", "UM BURACO NEGRO?"]
+    assert render.wrap_title("a " * 60)[-1].endswith("…") and len(render.wrap_title("a " * 60)) == 3
+    assert render.wrap_title("") == ["VIDEO"]
+
+
+@needs_ffmpeg
+def test_make_thumbnail_and_upload(tmp_path):
+    img = tmp_path / "i.jpg"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1024x1024:d=1", "-frames:v", "1", str(img)], check=True)
+    out = tmp_path / "capa.jpg"
+    render.make_thumbnail(img, "Um título bem longo para testar a capa do vídeo", out)
+    size = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.strip()
+    assert size == "1280,720"
+
+    class D(Db):
+        def upload(self, *a):
+            self.up = a
+    db = D([])
+    render_final.make_thumb(db, {"user_id": "u"}, "p", "Titulo", {"image": {"storage_key": "i1.jpg"}}, lambda b, k: img.read_bytes())
+    assert db.up[1] == "u/p/thumbnail.jpg" and db.rows["media_assets"][0]["kind"] == "thumbnail"
+    render_final.make_thumb(db, {"user_id": "u"}, "p", "T", {"image": {"storage_key": "i1.jpg"}}, lambda b, k: b"lixo")  # nao levanta

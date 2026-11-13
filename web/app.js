@@ -96,10 +96,24 @@ function progressOf(allTasks) {
   return { pct, label, failed, done, total };
 }
 
+// capas (kind=thumbnail) por projeto: { project_id -> { key, url } }
+async function thumbsFor(projectIds) {
+  const ids = [...new Set(projectIds)].filter(Boolean);
+  if (!ids.length) return new Map();
+  const rows = await load(sb.from("media_assets").select("project_id,storage_key").eq("kind", "thumbnail").in("project_id", ids).order("created_at", { ascending: false }));
+  const m = new Map();
+  for (const r of rows) if (!m.has(r.project_id)) m.set(r.project_id, { key: r.storage_key });
+  await signUrls([...m.values()].map((v) => v.key));
+  for (const v of m.values()) v.url = signed.get(v.key)?.url;
+  return m;
+}
+const capaImg = (t, cls = "capa") => (t?.url ? h("img", { class: cls, src: t.url, alt: "Capa do vídeo", loading: "lazy" }) : null);
+
 async function viewHome() {
   const count = async (table) => { const { count: n, error } = await sb.from(table).select("id", { count: "exact", head: true }); if (error) throw error; return n ?? 0; };
   const [nProj, nReady, nMusic, nVoice, recent] = await Promise.all([count("projects"), count("project_exports"), count("music_assets"), count("voice_profiles"),
     load(sb.from("projects").select("id,title,status,created_at").order("created_at", { ascending: false }).limit(4))]);
+  const caps = await thumbsFor(recent.map((p) => p.id)).catch(() => new Map());
   const go = (t) => () => setTab(t);
   const stat = (ic, n, label, t) => h("div", { class: "stat", style: "cursor:pointer", onclick: go(t) }, h("span", { class: "ic" }, ic), h("div", {}, h("b", {}, String(n)), h("span", { class: "mut" }, label)));
   const pill = (st) => h("span", { class: `pill ${st === "awaiting_approval" || st === "completed" ? "ok" : st === "failed" ? "bad" : "run"}` }, st === "awaiting_approval" ? "pronto" : (STATUS_PT[st] ?? st));
@@ -111,7 +125,7 @@ async function viewHome() {
     h("div", { class: "stats" }, stat("📁", nProj, "Projetos criados", "projects"), stat("🎬", nReady, "Vídeos prontos", "ready"), stat("🎵", nMusic, "Músicas na biblioteca", "music"), stat("🎙", nVoice, "Vozes de IA", "voices")),
     h("div", { class: "cols" },
       h("div", { class: "card" }, h("div", { class: "row", style: "justify-content:space-between;align-items:center;margin-bottom:6px" }, h("h2", { style: "margin:0;flex:none;min-width:0" }, "Seus projetos recentes"), h("a", { href: "#", style: "color:var(--ac);flex:none;min-width:0", onclick: (e) => { e.preventDefault(); setTab("projects"); } }, "Ver todos →")),
-        recent.length ? recent.map((p) => h("div", { class: "proj" }, h("div", { class: "av" }, (p.title || "?").trim().charAt(0).toUpperCase()),
+        recent.length ? recent.map((p) => h("div", { class: "proj" }, capaImg(caps.get(p.id), "capa sm") ?? h("div", { class: "av" }, (p.title || "?").trim().charAt(0).toUpperCase()),
           h("div", {}, h("strong", {}, p.title), h("span", { class: "mut" }, new Date(p.created_at).toLocaleString("pt-BR"))), pill(p.status),
           p.status === "awaiting_approval" ? h("button", { class: "ghost", onclick: go("ready") }, "Baixar") : h("button", { class: "ghost", onclick: go("projects") }, "Ver")))
           : h("p", { class: "mut" }, "Nenhum projeto ainda. Clique em “Criar novo projeto”.")),
@@ -355,15 +369,23 @@ async function viewMusic() {
 
 async function viewReady() {
   const rows = await load(sb.from("project_exports")
-    .select("id,created_at,projects(title),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
+    .select("id,project_id,created_at,projects(title),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
+  const caps = await thumbsFor(rows.map((r) => r.project_id)).catch(() => new Map());
+  const downCapa = (t) => h("button", { class: "ghost", onclick: async (ev) => {
+    ev.target.disabled = true;
+    try { const { data, error } = await sb.storage.from("media").createSignedUrl(t.key, 600, { download: "capa.jpg" }); if (error) throw error; location.href = data.signedUrl; } catch (e) { fail(e); }
+    ev.target.disabled = false;
+  } }, "Baixar capa");
   const mb = (b) => (b ? `${(b / 1048576).toFixed(1)} MB` : "");
   const item = (r) => {
     const a = r.media_assets || {}, drive = a.storage_backend === "gdrive";
     const when = new Date(r.created_at);
     const days = Math.max(0, 7 - Math.floor((Date.now() - when) / 86400000));
     const note = drive ? "Salvo no seu Google Drive" : days > 0 ? `Baixe pelo GitHub (login necessário) — some em ~${days} dia(s)` : "Expirado no GitHub (artifact de 7 dias)";
-    return h("div", { class: "item" },
-      h("div", {}, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
+    const cap = caps.get(r.project_id);
+    return h("div", { class: "item" }, capaImg(cap),
+      h("div", { style: "flex:1;min-width:0" }, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
+      cap ? downCapa(cap) : null,
       a.origin_url && (drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, target: "_blank", rel: "noopener noreferrer" }, drive ? "Abrir / baixar" : "Baixar") : null);
   };
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
