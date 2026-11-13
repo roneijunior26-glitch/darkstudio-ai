@@ -20,7 +20,8 @@ Pesquisa de 12/11/2026. Limites mudam; tudo marcado "a validar" precisa de teste
 - **FFmpeg** (runner ubuntu, 4 núcleos, 16 GB): 75 cenas de 8 s em 1080p30 com zoompan renderizam em ~7,4 min (5,9 s/cena); concat 9 s; mux 13 s; corte rápido `-c copy` 0,24 s; corte preciso 7,7 s; `xfade` funciona (12 s por par). Tamanho do arquivo não medido (imagem sintética com ruído).
 - **Piper pt-BR**: ~0,13 s de processamento por segundo de áudio. Vozes `faber`, `cadu`, `jeff` (medium) são CC0; `edresson` (low) é CC BY 4.0. Falta escolher a voz ouvindo as amostras.
 - **Gemini** (plano grátis): `gemini-3.5-flash-lite` divide roteiro em JSON válido (~3 s); rajada de 12 chamadas sem 429; `gemini-2.5-flash-lite` não aceita usuários novos (nome do modelo deve ser configurável); modelos de imagem retornam 429 (cota zero no grátis); 503 ocasional exige retry.
-- **FLUX** (token com permissão Workers AI): 3 imagens JPEG de 290–360 KB, ~2,9 s cada. Capacidade diária real ainda não medida.
+- **TTS alternativos**: Gemini TTS (grátis, ~10 s para 24 s de áudio, aceita instrução de tom), Kokoro (Apache-2.0, RTF ~0,4), Edge-TTS (não oficial, só reserva).
+- **FLUX** (token com permissão Workers AI): 3 imagens JPEG de 290–360 KB, ~2,9 s cada. A saída é quase quadrada (o modelo não aceita largura/altura): cortar 16:9 do centro no FFmpeg e pedir assunto centralizado e mais contraste nos prompts. Capacidade diária real ainda não medida.
 
 ## Checklist da Fase 0
 
@@ -28,7 +29,7 @@ Pesquisa de 12/11/2026. Limites mudam; tudo marcado "a validar" precisa de teste
 - [x] Corte rápido (`-c copy`) e corte preciso
 - [x] Gemini: texto, JSON de cenas e limite de taxa
 - [x] Piper pt-BR: velocidade e licença das vozes
-- [ ] Piper: escolher a voz ouvindo as amostras
+- [x] Voz: Piper descartado (robótico). Escolhidas: Gemini Kore/Charon, Kokoro pm_santa/pm_alex, Edge Thalita (ver `backend/migrations/0002_voices_seed.sql`). O app terá biblioteca de vozes com padrão por canal/nicho e troca por vídeo.
 - [ ] FLUX: qualidade visual e capacidade diária real (teste "drain")
 - [ ] Envio do MP4 ao Google Drive (precisa do OAuth)
 - [ ] Disparo do workflow por agendador gratuito ou botão
