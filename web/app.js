@@ -392,15 +392,37 @@ async function viewMusic() {
 const copyBtn = (getText, label = "Copiar") => h("button", { class: "ghost", type: "button", style: "flex:none;min-width:0;padding:4px 10px", onclick: async (ev) => {
   try { await navigator.clipboard.writeText(getText()); const b = ev.target; b.textContent = "Copiado ✓"; setTimeout(() => (b.textContent = label), 1500); } catch (e) { fail(e); }
 } }, label);
-function seoBox(seo) {
+// Publicação assistida: você aprova e publica no YouTube Studio. (Enviar por API de um app não auditado deixaria o vídeo
+// travado como privado, sem como tornar público; por isso o app prepara tudo e o envio final é seu.)
+function publishPanel(r, a, cap) {
+  const seo = r.projects?.seo;
   if (!seo) return h("div", { class: "mut", style: "flex-basis:100%" }, "Textos do YouTube: sendo gerados (aparecem aqui em instantes). Se não aparecerem, rode a migration 0009 no Supabase.");
-  const desc = h("textarea", { readonly: true, style: "min-height:180px" }); desc.value = seo.description || "";
-  const tags = (seo.tags || []).join(", ");
-  return h("details", { style: "flex-basis:100%" }, h("summary", { style: "cursor:pointer;color:var(--ac)" }, "Textos para o YouTube (títulos, descrição, tags)"),
-    h("label", {}, "Títulos sugeridos"),
-    ...(seo.titles || []).map((t) => h("div", { class: "row", style: "gap:8px;flex-wrap:nowrap;align-items:center;margin-bottom:4px" }, h("span", { style: "flex:1;min-width:0" }, t), copyBtn(() => t))),
-    h("label", {}, "Descrição (já com capítulos)"), desc, copyBtn(() => desc.value, "Copiar descrição"),
-    h("label", {}, "Tags (cole no campo de tags do YouTube)"), h("div", { class: "mut", style: "word-break:break-word" }, tags), copyBtn(() => tags, "Copiar tags"));
+  const title = h("input", { value: (seo.titles || [])[0] || r.projects.title, maxlength: "100" });
+  const picks = (seo.titles || []).map((t) => h("button", { class: "ghost", type: "button", style: "flex:none;min-width:0;padding:3px 9px", onclick: () => { title.value = t; } }, "usar"));
+  const desc = h("textarea", { style: "min-height:200px" }); desc.value = seo.description || "";
+  const tags = h("textarea", { style: "min-height:70px" }); tags.value = (seo.tags || []).join(", ");
+  const link = h("input", { placeholder: "Cole aqui o link do vídeo depois de publicar (opcional)", value: seo.youtube_url || "" });
+  const release = a.origin_url && a.origin_url.includes("/releases/download/");
+  const done = !!seo.published;
+  const mark = h("button", { class: "pri", type: "button", style: "margin-top:10px" }, done ? "Atualizar link" : "✔ Já publiquei");
+  mark.addEventListener("click", async () => {
+    try {
+      mark.disabled = true;
+      const next = { ...seo, published: true, youtube_url: link.value.trim() || null, published_at: seo.published_at || new Date().toISOString() };
+      await load(sb.from("projects").update({ seo: next, status: "completed" }).eq("id", r.projects.id).select("id"));
+      toast("Marcado como publicado."); viewReady().catch(fail);
+    } catch (e) { fail(e); mark.disabled = false; }
+  });
+  const step = (n, ...kids) => h("div", { style: "margin-top:14px" }, h("strong", { style: "color:var(--ac)" }, `${n}. `), ...kids);
+  return h("details", { style: "flex-basis:100%" }, h("summary", { style: "cursor:pointer;color:var(--ac)" }, done ? "📤 Publicado no YouTube — ver textos e passos" : "📤 Publicar no YouTube (passo a passo)"),
+    h("div", { class: "mut", style: "margin-top:8px" }, "Você revisa e aprova cada campo; a publicação é feita por você no YouTube Studio, com sua conta."),
+    step(1, "Baixe o vídeo e a capa: ", release && a.origin_url ? h("a", { class: "btn", href: a.origin_url, download: "" }, "⬇ Vídeo") : h("span", { class: "mut" }, "use o botão Baixar acima"), cap ? h("span", { class: "mut" }, "  (a capa: botão “Baixar capa” acima)") : null),
+    step(2, "Abra o ", h("a", { class: "btn", href: "https://www.youtube.com/upload", target: "_blank", rel: "noopener noreferrer" }, "YouTube Studio ↗"), h("span", { class: "mut" }, " e arraste o vídeo.")),
+    step(3, "Título:"), h("div", { class: "row", style: "gap:8px;flex-wrap:nowrap;align-items:center" }, title, copyBtn(() => title.value)), h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:4px" }, ...(seo.titles || []).map((t, i) => h("span", { class: "mut", style: "display:flex;gap:6px;align-items:center" }, `Opção ${i + 1}: ${t}`, picks[i]))),
+    step(4, "Descrição (já com capítulos):"), desc, copyBtn(() => desc.value, "Copiar descrição"),
+    step(5, "Tags (em “Mostrar mais”):"), tags, copyBtn(() => tags.value, "Copiar tags"),
+    step(6, "Envie a capa, escolha a visibilidade, revise e clique em Publicar no YouTube Studio."),
+    step(7, "Depois, marque aqui:"), link, mark);
 }
 
 const fmtTime = (t) => { const s = Math.max(0, t); const m = Math.floor(s / 60); return `${m}:${(s % 60).toFixed(1).padStart(4, "0")}`; };
@@ -495,7 +517,7 @@ async function viewReady() {
     return h("div", { class: "item", style: "flex-wrap:wrap" }, capaImg(cap),
       h("div", { style: "flex:1;min-width:0" }, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
       cap ? downCapa(cap) : null, newCapa(r), freeSpaceBtn(r.projects), deleteProjectBtn(r.projects, () => viewReady().catch(fail)),
-      a.origin_url && (release || drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, ...(release ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" }) }, release ? "⬇ Baixar vídeo" : drive ? "Abrir / baixar" : "Baixar") : null, seoBox(r.projects?.seo));
+      a.origin_url && (release || drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, ...(release ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" }) }, release ? "⬇ Baixar vídeo" : drive ? "Abrir / baixar" : "Baixar") : null, publishPanel(r, a, cap));
   };
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
     rows.length ? rows.map(item) : h("p", { class: "mut" }, "Nenhum vídeo pronto ainda. Quando um projeto terminar de renderizar, ele aparece aqui.")));
