@@ -4,6 +4,7 @@ on:
     inputs:
       run_ffmpeg: {description: "Benchmark FFmpeg", type: boolean, default: true}
       run_tts: {description: "Teste Piper pt-BR", type: boolean, default: true}
+      run_tts2: {description: "Teste TTS alternativos (Gemini, Edge, Kokoro)", type: boolean, default: false}
       run_gemini: {description: "Teste Gemini (precisa do secret)", type: boolean, default: true}
       run_flux: {description: "Teste FLUX (precisa dos secrets)", type: boolean, default: true}
       drain_flux: {description: "FLUX: gerar ate acabar a cota (mede capacidade diaria)", type: boolean, default: false}
@@ -41,6 +42,23 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: results-tts, path: results}
+  tts2:
+    if: inputs.run_tts2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: TTS alternativos
+        working-directory: scripts/phase0
+        env:
+          PHASE0_OUT: "${{ github.workspace }}/results"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python probe_tts2.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: results-tts2, path: results}
   gemini:
     if: inputs.run_gemini
     runs-on: ubuntu-latest
@@ -74,7 +92,7 @@ jobs:
         if: always()
         with: {name: results-flux, path: results}
   publish:
-    needs: [ffmpeg, tts, gemini, flux]
+    needs: [ffmpeg, tts, tts2, gemini, flux]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
