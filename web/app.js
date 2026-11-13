@@ -157,6 +157,8 @@ async function viewNew() {
   const title = h("input", { placeholder: "Título do vídeo" });
   const ch = h("select", {}, options(chs, "Escolha o canal").slice(1));
   const voice = h("select", {}, options(vs, "Voz padrão do canal"));
+  const musics = await load(sb.from("music_assets").select("id,name").order("name"));
+  const music = h("select", {}, h("option", { value: "" }, "Música: automática (sorteia da biblioteca)"), h("option", { value: "none" }, "Sem música"), ...musics.map((m) => h("option", { value: m.id }, m.name)));
   const script = h("textarea", { placeholder: "Cole aqui o roteiro / narração completa…" });
   const btn = h("button", { class: "pri" }, "Criar projeto e iniciar");
   const KEY = `ds_draft_${user.id}`;
@@ -173,7 +175,7 @@ async function viewNew() {
       const c = chs.find((x) => x.id === ch.value);
       const niche = nis.find((n) => n.id === c.niche_preset_id);
       const voiceId = voice.value || c.default_voice_id || niche?.default_voice_id || null;
-      const [proj] = await load(sb.from("projects").insert({ user_id: user.id, channel_id: c.id, title: title.value.trim(), input_mode: "script", visual_style: niche?.visual_style ?? null, voice_id: voiceId, status: "scripting" }).select("id"));
+      const [proj] = await load(sb.from("projects").insert({ user_id: user.id, channel_id: c.id, title: title.value.trim(), input_mode: "script", visual_style: niche?.visual_style ?? null, voice_id: voiceId, music_enabled: music.value !== "none", music_id: music.value && music.value !== "none" ? music.value : null, status: "scripting" }).select("id"));
       const [sc] = await load(sb.from("scripts").insert({ user_id: user.id, project_id: proj.id }).select("id"));
       const [ver] = await load(sb.from("script_versions").insert({ user_id: user.id, script_id: sc.id, version: 1, content: script.value, source: "pasted" }).select("id"));
       await load(sb.from("scripts").update({ current_version_id: ver.id }).eq("id", sc.id).select("id"));
@@ -185,7 +187,7 @@ async function viewNew() {
   });
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Novo projeto"),
     field("Título", title),
-    h("div", { class: "row" }, field("Canal", ch), field("Voz (opcional)", voice)),
+    h("div", { class: "row" }, field("Canal", ch), field("Voz (opcional)", voice)), field("Música de fundo", music),
     field("Roteiro / narração", script), btn));
 }
 
@@ -237,6 +239,43 @@ async function viewVoices() {
     rows.length ? rows.map((v) => h("div", { class: "item" }, h("div", {}, h("strong", {}, v.name), h("div", { class: "mut" }, `${v.engine} · ${v.category ?? ""} · ${v.license}`)))) : h("p", { class: "mut" }, "Nenhuma voz. Rode a migration 0002 no Supabase.")));
 }
 
+async function viewMusic() {
+  const rows = await load(sb.from("music_assets").select("id,name,category,license,origin_url,storage_key,bytes").order("created_at", { ascending: false }));
+  const file = h("input", { type: "file", accept: "audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/mp4,.mp3,.wav,.ogg,.m4a" });
+  const name = h("input", { placeholder: "Nome da música (ex.: Dark Ambient 1)" });
+  const mood = h("input", { placeholder: "Clima (ex.: sombrio, suspense, calmo)" });
+  const lic = h("input", { placeholder: "Licença (ex.: Pixabay, CC0, YouTube Audio Library)" });
+  const src = h("input", { placeholder: "Link de onde baixou" });
+  const btn = h("button", { class: "pri" }, "Enviar música");
+  btn.addEventListener("click", async () => {
+    try {
+      const f = file.files[0];
+      if (!f || !name.value.trim() || !lic.value.trim() || !src.value.trim()) throw new Error("Escolha o arquivo e preencha nome, licença e link.");
+      if (f.size > 50 * 1024 * 1024) throw new Error("Arquivo maior que 50 MB.");
+      btn.disabled = true;
+      const ext = (f.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const key = `${user.id}/music/${crypto.randomUUID()}.${ext}`;
+      const up = await sb.storage.from("media").upload(key, f, { contentType: f.type || "audio/mpeg" });
+      if (up.error) throw up.error;
+      await load(sb.from("music_assets").insert({ user_id: user.id, name: name.value.trim(), category: mood.value.trim() || null, license: lic.value.trim(), origin_url: src.value.trim(), storage_key: key, bytes: f.size }).select("id"));
+      toast("Música enviada."); setTab("music");
+    } catch (e) { fail(e); btn.disabled = false; }
+  });
+  const delMusic = (m) => h("button", { class: "ghost", onclick: async () => {
+    if (!confirm(`Excluir a música “${m.name}”?`)) return;
+    try {
+      if (m.storage_key) await sb.storage.from("media").remove([m.storage_key]);
+      await load(sb.from("music_assets").delete().eq("id", m.id).select("id")); toast("Excluída."); setTab("music");
+    } catch (e) { fail(e); }
+  } }, "Excluir");
+  app.replaceChildren(
+    h("div", { class: "card" }, h("h2", {}, "Músicas de fundo"),
+      h("p", { class: "mut" }, "Envie só faixas que você pode usar em vídeo monetizado (Pixabay Music, YouTube Audio Library, CC0…). Em cada vídeo a música toca baixinho, abaixa quando há narração e some no final."),
+      rows.length ? rows.map((m) => h("div", { class: "item" }, h("div", {}, h("strong", {}, m.name), h("div", { class: "mut" }, `${m.category ?? "sem clima"} · ${m.license} · ${m.bytes ? (m.bytes / 1048576).toFixed(1) + " MB" : ""}`)), delMusic(m)))
+        : h("p", { class: "mut" }, "Nenhuma música ainda. Sem músicas, o vídeo sai só com a narração.")),
+    h("div", { class: "card" }, h("h3", {}, "Nova música"), field("Arquivo (mp3, wav, ogg, m4a)", file), field("Nome", name), field("Clima", mood), field("Licença", lic), field("Link de origem", src), btn));
+}
+
 async function viewReady() {
   const rows = await load(sb.from("project_exports")
     .select("id,created_at,projects(title),media_assets(storage_backend,bytes,origin_url)").order("created_at", { ascending: false }));
@@ -255,7 +294,7 @@ async function viewReady() {
 }
 
 // ---------- navegacao ----------
-const TABS = { projects: ["Projetos", viewProjects], ready: ["Vídeos prontos", viewReady], new: ["Novo projeto", viewNew], channels: ["Canais", viewChannels], voices: ["Vozes", viewVoices] };
+const TABS = { projects: ["Projetos", viewProjects], ready: ["Vídeos prontos", viewReady], music: ["Músicas", viewMusic], new: ["Novo projeto", viewNew], channels: ["Canais", viewChannels], voices: ["Vozes", viewVoices] };
 function setTab(t) {
   tab = t;
   clearInterval(poll);

@@ -36,7 +36,11 @@ class Db:
         self.scenes, self.updates, self.inserted, self.rows = scenes, [], [], {}
 
     def select(self, table, q=""):
-        return [{"title": "Meu: Vídeo/Teste?"}] if table == "projects" else self.scenes
+        if table == "projects":
+            return [{"title": "Meu: Vídeo/Teste?", **getattr(self, "proj", {})}]
+        if table == "music_assets":
+            return getattr(self, "music", [])
+        return self.scenes
 
     def insert(self, table, rows):
         self.rows.setdefault(table, []).extend(rows)
@@ -120,3 +124,33 @@ def test_default_publish_drive_failure_falls_back(monkeypatch, tmp_path):
     monkeypatch.setattr(gdrive, "upload", lambda *a, **k: {"id": "D", "link": "L", "bytes": 1})
     assert render_final.default_publish(f, "y.mp4") == {"backend": "gdrive", "key": "D", "url": "L"}
     assert not f.exists()
+
+
+def test_pick_music_rules():
+    db = Db([])
+    assert render_final.pick_music(db, "u", {"music_enabled": False}) is None
+    assert render_final.pick_music(db, "u", {}) is None
+    db.music = [{"name": "a", "storage_key": "k1"}, {"name": "sem", "storage_key": None}]
+    assert render_final.pick_music(db, "u", {}) == {"name": "a", "storage_key": "k1"}
+    assert render_final.pick_music(db, "u", {"music_id": "x"})["storage_key"] == "k1"
+    assert render_final.pick_music(db, "u", {"music_enabled": False}) is None
+
+
+@needs_ffmpeg
+def test_render_mixes_music_and_survives_bad_track(tmp_path):
+    def mk(name, args):
+        f = tmp_path / name
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args, str(f)], check=True)
+        return f.read_bytes()
+    store = {"i1": mk("i.jpg", ["-f", "lavfi", "-i", "testsrc2=s=1024x1024:d=1", "-frames:v", "1"]),
+             "a1": tts.pcm_to_wav(b"\x10\x00" * 48000, 24000),
+             "m_ok": mk("m.mp3", ["-f", "lavfi", "-i", "sine=f=220:d=2"]), "m_bad": b"nao e audio"}
+    for key, ok in (("m_ok", True), ("m_bad", False)):
+        db = Db([sc(1)])
+        db.music = [{"name": "t", "storage_key": key}]
+        res = render_final.run({"project_id": "p", "user_id": "u"}, db, lambda b, k: store[k], outdir=str(tmp_path / key),
+                               publish=lambda p, n: {"backend": "x", "key": "k", "url": None})
+        out = tmp_path / key / "p.mp4"
+        assert out.stat().st_size > 0 and abs(res["duration_s"] - 2.3) < 0.1
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout
+        assert "video" in probe and "audio" in probe
