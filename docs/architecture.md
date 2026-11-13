@@ -32,11 +32,13 @@ Fonte completa do planejamento: documento "DarkStudio AI — Arquitetura, viabil
 | Migration inicial com RLS (`backend/migrations/0001_init.sql`) | Escrita. **Ainda não aplicada a um Postgres**: validar no Supabase |
 | Contrato de fornecedores e guarda de custo | Implementado e testado |
 | `input_hash` e propagação de reconstrução | Implementado e testado |
-| Estados, backoff e SQL de reserva da fila | Implementado; SQL conferido com a migration por teste, **não executado em Postgres** |
-| Varredura de segredos + CI | Implementado (script testado); workflow ainda não rodou no GitHub |
-| Frontend (login, dashboard, projetos) | Planejado (próximo passo da Fase 1) |
-| Worker (loop de execução, adaptadores reais) | Planejado |
-| Workflow do worker no Actions | Planejado |
+| Estados, backoff e fila (RPC `claim_task` / `reclaim_stuck_tasks`, migration 0004) | Implementado e testado com banco simulado; a reserva real roda no Supabase do usuário |
+| Varredura de segredos + CI | Implementado; CI verde no GitHub |
+| Frontend sem build (login, canais, nichos, vozes, projetos, progresso, cenas com miniaturas) | Implementado; publicado no GitHub Pages |
+| Worker: `split_scenes` (Gemini), `generate_image` (FLUX), `generate_audio` (Gemini TTS / Kokoro), `render_final` (FFmpeg) | Implementado; testado com serviços simulados e FFmpeg real; **ainda não validado de ponta a ponta com um vídeo real** |
+| Workflow do worker (agendado a cada 5 min + manual) | Implementado; entrega o MP4 como artifact por 7 dias |
+| Entrega no Google Drive | Planejado (precisa do OAuth do usuário) |
+| Miniatura, SEO, editor de cortes do MP4, upload no YouTube | Planejado |
 | Skills do Claude Code (`.claude/skills/`) | Planejado |
 
 ## Limitações dos serviços gratuitos
