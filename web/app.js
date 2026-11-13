@@ -26,6 +26,10 @@ function toast(msg, kind = "ok") {
   toast.t = setTimeout(() => (t.className = ""), 3500);
 }
 const fail = (e) => toast(e?.message || String(e), "err");
+const del = (table, id, what) => h("button", { class: "ghost", onclick: async () => {
+  if (!confirm(`Excluir ${what}?`)) return;
+  try { await load(sb.from(table).delete().eq("id", id).select("id")); toast("Excluído."); setTab(tab); } catch (e) { fail(e); }
+} }, "Excluir");
 const field = (label, input) => h("div", {}, h("label", {}, label), input);
 const options = (rows, empty) => [h("option", { value: "" }, empty), ...rows.map((r) => h("option", { value: r.id }, r.name))];
 
@@ -102,11 +106,13 @@ async function viewChannels() {
   const nVoice = h("select", {}, options(vs, "Voz padrão do nicho"));
   const addNiche = h("button", { class: "pri" }, "Salvar nicho");
   addNiche.addEventListener("click", async () => {
+    if (addNiche.disabled) return;
+    addNiche.disabled = true;
     try {
       if (!nName.value.trim()) throw new Error("Dê um nome ao nicho.");
       await load(sb.from("niche_presets").insert({ user_id: user.id, name: nName.value.trim(), visual_style: nStyle.value.trim() || null, default_voice_id: nVoice.value || null }).select("id"));
       toast("Nicho salvo."); viewChannels().catch(fail);
-    } catch (e) { fail(e); }
+    } catch (e) { fail(e); addNiche.disabled = false; }
   });
   const cName = h("input", { placeholder: "Nome do canal" });
   const cTone = h("input", { placeholder: "Tom (ex.: sério, misterioso)" });
@@ -115,21 +121,23 @@ async function viewChannels() {
   const cVoice = h("select", {}, options(vs, "Voz padrão do canal"));
   const addCh = h("button", { class: "pri" }, "Salvar canal");
   addCh.addEventListener("click", async () => {
+    if (addCh.disabled) return;
+    addCh.disabled = true;
     try {
       if (!cName.value.trim()) throw new Error("Dê um nome ao canal.");
       await load(sb.from("channels").insert({ user_id: user.id, name: cName.value.trim(), tone: cTone.value.trim() || null, audience: cAud.value.trim() || null, niche_preset_id: cNiche.value || null, default_voice_id: cVoice.value || null }).select("id"));
       toast("Canal salvo."); viewChannels().catch(fail);
-    } catch (e) { fail(e); }
+    } catch (e) { fail(e); addCh.disabled = false; }
   });
   app.replaceChildren(
     h("div", { class: "card" }, h("h2", {}, "Canais"),
       chs.length ? chs.map((c) => h("div", { class: "item" }, h("div", {}, h("strong", {}, c.name), h("div", { class: "mut" }, [c.tone, c.audience].filter(Boolean).join(" · ") || "—")),
-        h("span", { class: "tag" }, nis.find((n) => n.id === c.niche_preset_id)?.name ?? "sem nicho"))) : h("p", { class: "mut" }, "Nenhum canal."),
+        h("span", { class: "tag" }, nis.find((n) => n.id === c.niche_preset_id)?.name ?? "sem nicho"), del("channels", c.id, `o canal “${c.name}”`))) : h("p", { class: "mut" }, "Nenhum canal."),
       h("h3", { style: "margin-top:18px" }, "Novo canal"), field("Nome", cName),
       h("div", { class: "row" }, field("Nicho", cNiche), field("Voz", cVoice)),
       h("div", { class: "row" }, field("Tom", cTone), field("Público", cAud)), addCh),
     h("div", { class: "card" }, h("h2", {}, "Nichos"),
-      nis.length ? nis.map((n) => h("div", { class: "item" }, h("div", {}, h("strong", {}, n.name), h("div", { class: "mut" }, n.visual_style || "sem estilo definido")))) : h("p", { class: "mut" }, "Nenhum nicho."),
+      nis.length ? nis.map((n) => h("div", { class: "item" }, h("div", {}, h("strong", {}, n.name), h("div", { class: "mut" }, n.visual_style || "sem estilo definido")), del("niche_presets", n.id, `o nicho “${n.name}”`))) : h("p", { class: "mut" }, "Nenhum nicho."),
       h("h3", { style: "margin-top:18px" }, "Novo nicho"), field("Nome", nName), field("Estilo visual", nStyle), field("Voz padrão", nVoice), addNiche));
 }
 
