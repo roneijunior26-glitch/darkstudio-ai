@@ -5,14 +5,11 @@ import os
 import time
 from datetime import datetime, timezone
 
-from . import gemini
-from .handlers import split_scenes
+from . import cloudflare, gemini
+from .errors import PermanentError, WaitQuota
+from .handlers import generate_image, split_scenes
 from .queue import retry_at, status_after_failure
 from .rest import Rest
-
-
-class PermanentError(RuntimeError):
-    """Erro sem sentido tentar de novo (tipo de tarefa desconhecido, dado invalido)."""
 
 
 def redact(text: str) -> str:
@@ -24,11 +21,19 @@ def redact(text: str) -> str:
 
 
 def handlers(db: Rest):
-    return {"split_scenes": lambda t: split_scenes.run(t, db, gemini.generate_json)}
+    return {
+        "split_scenes": lambda t: split_scenes.run(t, db, gemini.generate_json),
+        "generate_image": lambda t: generate_image.run(t, db, cloudflare.generate),
+    }
 
 
 def finish(db: Rest, task: dict, error: Exception | None, result: dict | None = None, permanent=False):
     tid = task["id"]
+    if isinstance(error, WaitQuota):  # espera a cota voltar; nao conta como tentativa
+        db.update("tasks", f"id=eq.{tid}", {"status": "WAITING_PROVIDER", "run_after": error.until.isoformat(),
+                                            "attempts": max(task["attempts"] - 1, 0), "last_error": str(error)[:300],
+                                            "locked_by": None, "locked_at": None})
+        return
     if error is None:
         db.update("tasks", f"id=eq.{tid}", {"status": "COMPLETED", "result": result, "last_error": None,
                                             "locked_by": None, "locked_at": None})
@@ -62,6 +67,9 @@ def run(db: Rest | None = None, max_seconds: int | None = None) -> int:
             done += 1
         except PermanentError as e:
             finish(db, task, e, permanent=True)
+        except WaitQuota as e:
+            finish(db, task, e)
+            print(f"[worker] cota esgotada, aguardando ate {e.until:%Y-%m-%d %H:%M} UTC", flush=True)
         except Exception as e:  # noqa: BLE001 - qualquer falha vira retry com backoff
             finish(db, task, e)
             print(f"[worker] falhou: {redact(str(e))[:200]}", flush=True)

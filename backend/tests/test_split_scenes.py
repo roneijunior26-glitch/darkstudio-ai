@@ -51,12 +51,14 @@ class FakeDb:
         self.t[table] = []
 
 
-def test_run_creates_chapters_scenes_and_approval_task():
+def test_run_creates_chapters_scenes_and_image_tasks():
     db = FakeDb()
     task = {"payload": {"script_version_id": "v1"}, "project_id": "p1", "user_id": "u1"}
     res = ss.run(task, db, lambda prompt: good())
     assert res == {"chapters": 1, "scenes": 2}
     assert [s["position"] for s in db.t["scenes"]] == [1, 2]
     assert db.t["scenes"][0]["chapter_id"] == db.t["chapters"][0]["id"]
-    assert db.t["tasks"][0]["status"] == "WAITING_APPROVAL"
-    assert ("projects", "id=eq.p1", {"status": "storyboard"}) in db.updates
+    assert [t["type"] for t in db.t["tasks"]] == ["generate_image", "generate_image"]
+    assert db.t["tasks"][0]["payload"]["scene_id"] == db.t["scenes"][0]["id"]
+    assert db.t["tasks"][0]["idempotency_key"] == f"img:{db.t['scenes'][0]['id']}"
+    assert ("projects", "id=eq.p1", {"status": "producing"}) in db.updates
