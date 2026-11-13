@@ -111,10 +111,19 @@ def mix_music(video: Path, music: Path, out: Path, duration: float, gain: float 
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def wrap_title(title: str, width: int = 16, max_lines: int = 3) -> list[str]:
-    """Quebra o titulo em ate 3 linhas MAIUSCULAS curtas (corta com reticencias se for longo)."""
+def thumb_title(title: str) -> str:
+    """Titulo curto para a capa: 'Tema: subtitulo comprido' vira so 'Tema' (mais impacto, cabe grande)."""
+    title = " ".join(title.split())
+    head = title.split(":")[0].strip()
+    if ":" in title and len(title) > 40 and len(head.split()) >= 2:
+        return head
+    return title
+
+
+def wrap_title(title: str, width: int = 16, max_lines: int = 4) -> list[str]:
+    """Quebra o titulo em ate 4 linhas MAIUSCULAS curtas (corta com reticencias se for longo)."""
     lines, cur = [], ""
-    for w in title.upper().split():
+    for w in thumb_title(title).upper().split():
         if cur and len(cur) + 1 + len(w) > width:
             lines.append(cur); cur = w
         else:
@@ -123,21 +132,27 @@ def wrap_title(title: str, width: int = 16, max_lines: int = 3) -> list[str]:
         lines.append(cur)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-        lines[-1] = lines[-1].rstrip(" ,.:;!?") + "…"
+        lines[-1] = lines[-1].rstrip(" ,.:;!?") + "..."
     return lines or ["VIDEO"]
 
 
 def make_thumbnail(image: Path, title: str, out: Path) -> None:
-    """Capa 1280x720: imagem da 1a cena (contraste/saturacao), faixa escura a esquerda e titulo grande com contorno."""
+    """Capa 1280x720: imagem da cena 1 clareada, degrade escuro suave a esquerda e titulo grande com contorno.
+    Uma linha = um drawtext (sem quebra de linha dentro do texto: evita caracteres estranhos no ffmpeg do runner)."""
     lines = wrap_title(title)
-    size = max(56, min(112, int(840 / (max(len(l) for l in lines) * 0.76)), 300 // len(lines)))  # cabe na faixa escura (~840 px) e na altura
-    txt = out.with_suffix(".txt")
-    txt.write_text("\n".join(lines), encoding="utf-8")
-    vf = ("crop=iw:trunc(iw*9/16/2)*2,scale=1280:720:flags=lanczos,eq=contrast=1.12:saturation=1.25:brightness=-0.03,"
-          "drawbox=x=0:y=0:w=960:h=720:color=black@0.55:t=fill,drawbox=x=0:y=0:w=14:h=720:color=0x14c99a@1:t=fill,"
-          f"drawtext=fontfile={FONT_BOLD}:textfile={txt.name}:fontsize={size}:line_spacing=14:fontcolor=white:"
-          "borderw=6:bordercolor=black:x=60:y=(h-text_h)/2")
-    run_ffmpeg(["-i", image.name, "-vf", vf, "-frames:v", "1", "-q:v", "2", str(out)], cwd=out.parent)
+    n = len(lines)
+    size = max(56, min(116, int(880 / (max(len(l) for l in lines) * 0.76)), 520 // n))
+    step = int(size * 1.18)
+    y0 = (720 - step * n) // 2
+    texts = []
+    for i, line in enumerate(lines):
+        f = out.with_name(f"{out.stem}_l{i}.txt")
+        f.write_text(line, encoding="utf-8")
+        texts.append(f"drawtext=fontfile={FONT_BOLD}:textfile={f.name}:fontsize={size}:fontcolor=white:borderw=6:bordercolor=black:x=60:y={y0 + i * step}")
+    shade = "color=c=black:s=1280x720:d=1,format=rgba,geq=r=0:g=0:b=0:a='min(255,225*pow(max(0,1-X/(W*0.8)),1.3))'"
+    graph = ("[0:v]crop=iw:trunc(iw*9/16/2)*2,scale=1280:720:flags=lanczos,eq=contrast=1.18:saturation=1.3:brightness=0.07:gamma=1.15[bg];"
+             "[bg][1:v]overlay,drawbox=x=0:y=0:w=14:h=720:color=0x14c99a@1:t=fill," + ",".join(texts))
+    run_ffmpeg(["-i", image.name, "-f", "lavfi", "-i", shade, "-filter_complex", graph, "-frames:v", "1", "-q:v", "2", str(out)], cwd=out.parent)
 
 
 def have_ffmpeg() -> bool:
