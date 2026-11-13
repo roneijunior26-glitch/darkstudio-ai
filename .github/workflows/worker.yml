@@ -26,8 +26,17 @@ jobs:
         if: steps.chk.outputs.ok == 'true'
       - uses: actions/setup-python@v5
         if: steps.chk.outputs.ok == 'true'
-        with: {python-version: "3.12"}
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements-worker.txt}
+      - name: Dependencias de audio (Kokoro)
+        if: steps.chk.outputs.ok == 'true'
+        run: |
+          sudo apt-get install -y -qq espeak-ng >/dev/null
+          pip install -q -r backend/requirements-worker.txt
+      - uses: actions/cache@v4
+        if: steps.chk.outputs.ok == 'true'
+        with: {path: backend/.kokoro, key: kokoro-model-v1}
       - name: Executar worker
         if: steps.chk.outputs.ok == 'true'
         working-directory: backend
+        env: {KOKORO_DIR: .kokoro}
         run: python -m app.workers.runner

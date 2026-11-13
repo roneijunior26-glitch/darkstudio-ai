@@ -58,7 +58,7 @@ def test_run_creates_chapters_scenes_and_image_tasks():
     assert res == {"chapters": 1, "scenes": 2}
     assert [s["position"] for s in db.t["scenes"]] == [1, 2]
     assert db.t["scenes"][0]["chapter_id"] == db.t["chapters"][0]["id"]
-    assert [t["type"] for t in db.t["tasks"]] == ["generate_image", "generate_image"]
+    assert [t["type"] for t in db.t["tasks"]] == ["generate_image"] * 2 + ["generate_audio"] * 2
     assert db.t["tasks"][0]["payload"]["scene_id"] == db.t["scenes"][0]["id"]
     assert db.t["tasks"][0]["idempotency_key"] == f"img:{db.t['scenes'][0]['id']}"
     assert ("projects", "id=eq.p1", {"status": "producing"}) in db.updates
