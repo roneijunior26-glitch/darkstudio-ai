@@ -4,7 +4,7 @@ on:
     - cron: "*/5 * * * *"   # sem custo; o GitHub pode atrasar alguns minutos
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write   # criar Releases com o video pronto
 concurrency: {group: worker, cancel-in-progress: false}
 jobs:
   run:
@@ -19,6 +19,7 @@ jobs:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
       WORKER_MAX_SECONDS: "6000"
     steps:
       - name: Verificar segredos

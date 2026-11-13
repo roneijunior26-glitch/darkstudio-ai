@@ -389,14 +389,15 @@ async function viewReady() {
   const mb = (b) => (b ? `${(b / 1048576).toFixed(1)} MB` : "");
   const item = (r) => {
     const a = r.media_assets || {}, drive = a.storage_backend === "gdrive";
+    const release = a.origin_url && a.origin_url.includes("/releases/download/");
     const when = new Date(r.created_at);
     const days = Math.max(0, 7 - Math.floor((Date.now() - when) / 86400000));
-    const note = drive ? "Salvo no seu Google Drive" : days > 0 ? `Baixe pelo GitHub (login necessário) — some em ~${days} dia(s)` : "Expirado no GitHub (artifact de 7 dias)";
+    const note = release ? "Download direto, sem prazo" : drive ? "Salvo no seu Google Drive" : days > 0 ? `Baixe pelo GitHub (login necessário) — some em ~${days} dia(s)` : "Expirado no GitHub (artifact de 7 dias)";
     const cap = caps.get(r.project_id);
     return h("div", { class: "item", style: "flex-wrap:wrap" }, capaImg(cap),
       h("div", { style: "flex:1;min-width:0" }, h("strong", {}, r.projects?.title || "Vídeo"), h("div", { class: "mut" }, `${when.toLocaleString("pt-BR")} · ${mb(a.bytes)} · ${note}`)),
       cap ? downCapa(cap) : null,
-      a.origin_url && (drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, target: "_blank", rel: "noopener noreferrer" }, drive ? "Abrir / baixar" : "Baixar") : null, seoBox(r.projects?.seo));
+      a.origin_url && (release || drive || days > 0) ? h("a", { class: "btn", href: a.origin_url, ...(release ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" }) }, release ? "⬇ Baixar vídeo" : drive ? "Abrir / baixar" : "Baixar") : null, seoBox(r.projects?.seo));
   };
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeos prontos"),
     rows.length ? rows.map(item) : h("p", { class: "mut" }, "Nenhum vídeo pronto ainda. Quando um projeto terminar de renderizar, ele aparece aqui.")));
