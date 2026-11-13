@@ -24,3 +24,4 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--tx);border
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none}
 #toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
 .auth{max-width:380px;margin:12vh auto}
+.bar{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:99px;overflow:hidden;margin:8px 0 4px}.bar>div{height:100%;background:var(--ac);transition:width .4s}.bar.bad>div{background:var(--err)}

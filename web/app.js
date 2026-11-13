@@ -61,12 +61,43 @@ const niches = () => load(sb.from("niche_presets").select("id,name,visual_style,
 const channels = () => load(sb.from("channels").select("id,name,tone,audience,niche_preset_id,default_voice_id").order("name"));
 
 // ---------- telas ----------
+const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imagens", generate_audio: "Gerando narração", build_subtitles: "Legendas", render_clip: "Montando cenas", render_final: "Renderizando vídeo", upload: "Enviando" };
+const STATUS_PT = { draft: "rascunho", scripting: "roteiro", storyboard: "storyboard", producing: "produzindo", rendering: "renderizando", awaiting_approval: "aguardando aprovação", completed: "concluído", failed: "falhou" };
+let poll = null;
+
+function progressOf(tasks) {
+  const total = tasks.length;
+  const done = tasks.filter((t) => t.status === "COMPLETED").length;
+  const failed = tasks.some((t) => t.status === "FAILED");
+  const running = tasks.find((t) => t.status === "RUNNING") ?? tasks.find((t) => ["QUEUED", "WAITING_PROVIDER", "PENDING"].includes(t.status));
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  let label = "Sem tarefas";
+  if (total) label = failed ? "Falhou" : done === total ? "Concluído" : running ? (STEP[running.type] ?? running.type) + (running.status === "RUNNING" ? "…" : " (na fila)") : "Aguardando";
+  return { pct, label, failed, done, total };
+}
+
 async function viewProjects() {
-  const rows = await load(sb.from("projects").select("id,title,status,created_at,channels(name)").is("deleted_at", null).order("created_at", { ascending: false }));
-  app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Projetos"),
-    rows.length ? rows.map((p) => h("div", { class: "item" },
-      h("div", {}, h("strong", {}, p.title), h("div", { class: "mut" }, `${p.channels?.name ?? "—"} · ${new Date(p.created_at).toLocaleString("pt-BR")}`)),
-      h("span", { class: "tag" }, p.status))) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
+  clearInterval(poll);
+  const draw = async () => {
+    const [rows, tasks] = await Promise.all([
+      load(sb.from("projects").select("id,title,status,created_at,channels(name)").is("deleted_at", null).order("created_at", { ascending: false })),
+      load(sb.from("tasks").select("project_id,type,status")),
+    ]);
+    const byProj = new Map();
+    for (const t of tasks) (byProj.get(t.project_id) ?? byProj.set(t.project_id, []).get(t.project_id)).push(t);
+    app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Projetos"),
+      rows.length ? rows.map((p) => {
+        const pr = progressOf(byProj.get(p.id) ?? []);
+        return h("div", { class: "item", style: "flex-wrap:wrap" },
+          h("div", {}, h("strong", {}, p.title), h("div", { class: "mut" }, `${p.channels?.name ?? "—"} · ${new Date(p.created_at).toLocaleString("pt-BR")}`)),
+          h("span", { class: "tag" }, STATUS_PT[p.status] ?? p.status),
+          h("div", { style: "flex-basis:100%" },
+            h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
+            h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`)));
+      }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
+  };
+  await draw();
+  poll = setInterval(() => { if (tab === "projects" && !document.hidden) draw().catch(() => {}); }, 5000);
 }
 
 async function viewNew() {
@@ -77,6 +108,13 @@ async function viewNew() {
   const voice = h("select", {}, options(vs, "Voz padrão do canal"));
   const script = h("textarea", { placeholder: "Cole aqui o roteiro / narração completa…" });
   const btn = h("button", { class: "pri" }, "Criar projeto e iniciar");
+  const KEY = `ds_draft_${user.id}`;
+  const saveDraft = () => { try { localStorage.setItem(KEY, JSON.stringify({ t: title.value, c: ch.value, v: voice.value, s: script.value })); } catch {} };
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (d) { title.value = d.t ?? ""; script.value = d.s ?? ""; if (chs.some((x) => x.id === d.c)) ch.value = d.c; if (vs.some((x) => x.id === d.v)) voice.value = d.v; }
+  } catch {}
+  for (const el of [title, ch, voice, script]) { el.addEventListener("input", saveDraft); el.addEventListener("change", saveDraft); }
   btn.addEventListener("click", async () => {
     try {
       if (!title.value.trim() || !script.value.trim()) throw new Error("Preencha título e roteiro.");
@@ -89,6 +127,7 @@ async function viewNew() {
       const [ver] = await load(sb.from("script_versions").insert({ user_id: user.id, script_id: sc.id, version: 1, content: script.value, source: "pasted" }).select("id"));
       await load(sb.from("scripts").update({ current_version_id: ver.id }).eq("id", sc.id).select("id"));
       await load(sb.from("tasks").insert({ user_id: user.id, project_id: proj.id, type: "split_scenes", status: "QUEUED", payload: { script_version_id: ver.id, voice_id: voiceId }, idempotency_key: `split:${ver.id}` }).select("id"));
+      try { localStorage.removeItem(KEY); } catch {}
       toast("Projeto criado. A divisão em cenas entrou na fila.");
       setTab("projects");
     } catch (e) { fail(e); btn.disabled = false; }
@@ -151,14 +190,17 @@ async function viewVoices() {
 const TABS = { projects: ["Projetos", viewProjects], new: ["Novo projeto", viewNew], channels: ["Canais", viewChannels], voices: ["Vozes", viewVoices] };
 function setTab(t) {
   tab = t;
+  clearInterval(poll);
   $("nav").replaceChildren(...Object.entries(TABS).map(([k, [label]]) => h("button", { class: k === tab ? "on" : "", onclick: () => setTab(k) }, label)));
   TABS[t][1]().catch(fail);
 }
 $("logout").addEventListener("click", () => sb.auth.signOut());
 
 function onSession(session) {
+  const prev = user;
   user = session?.user ?? null;
   if (!user) return authView();
+  if (prev && prev.id === user.id) return; // renovacao de token ao voltar para a aba: nao redesenha
   $("top").hidden = false;
   $("who").textContent = user.email;
   setTab(tab);
