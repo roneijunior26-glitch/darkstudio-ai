@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from . import cloudflare, gemini, tts
 from .errors import PermanentError, WaitQuota
-from .handlers import generate_audio, generate_image, render_final, split_scenes
+from .handlers import generate_audio, generate_image, render_final, split_scenes, voice_preview
 from .queue import retry_at, status_after_failure
 from .rest import Rest
 
@@ -25,6 +25,7 @@ def handlers(db: Rest):
         "split_scenes": lambda t: split_scenes.run(t, db, gemini.generate_json),
         "generate_image": lambda t: generate_image.run(t, db, cloudflare.generate),
         "generate_audio": lambda t: generate_audio.run(t, db, tts.synthesize),
+        "voice_preview": lambda t: voice_preview.run(t, db, tts.synthesize),
         "render_final": lambda t: render_final.run(t, db, db.download),
     }
 

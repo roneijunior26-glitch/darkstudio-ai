@@ -187,7 +187,7 @@ async function viewNew() {
   });
   app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Novo projeto"),
     field("Título", title),
-    h("div", { class: "row" }, field("Canal", ch), field("Voz (opcional)", voice)), field("Música de fundo", music),
+    h("div", { class: "row" }, field("Canal", ch), h("div", {}, h("label", {}, "Voz (opcional)"), h("div", { class: "row", style: "gap:8px;flex-wrap:nowrap" }, voice, previewButton(() => voice.value || chs.find((x) => x.id === ch.value)?.default_voice_id || nis.find((n) => n.id === chs.find((x) => x.id === ch.value)?.niche_preset_id)?.default_voice_id)))), field("Música de fundo", music),
     field("Roteiro / narração", script), btn));
 }
 
@@ -233,10 +233,63 @@ async function viewChannels() {
       h("h3", { style: "margin-top:18px" }, "Novo nicho"), field("Nome", nName), field("Estilo visual", nStyle), field("Voz padrão", nVoice), addNiche));
 }
 
+// Pré-escuta de voz: usa a amostra guardada; se não existir, pede ao worker (até ~2 min na 1ª vez) e toca quando ficar pronta.
+const previewKey = (vid) => `${user.id}/voices/${vid}.wav`;
+async function previewUrl(vid) {
+  const { data, error } = await sb.storage.from("media").createSignedUrl(previewKey(vid), 3600);
+  return error ? null : data.signedUrl;
+}
+async function requestPreview(vid) {
+  const key = `vprev:${vid}`;
+  const [t] = await load(sb.from("tasks").select("id,status").eq("idempotency_key", key));
+  if (!t) await load(sb.from("tasks").upsert({ user_id: user.id, type: "voice_preview", status: "QUEUED", priority: 10, payload: { voice_id: vid }, idempotency_key: key, timeout_s: 600 }, { onConflict: "user_id,idempotency_key", ignoreDuplicates: true }).select("id"));
+  else if (t.status === "FAILED" || t.status === "COMPLETED") await load(sb.from("tasks").update({ status: "QUEUED", attempts: 0, run_after: new Date().toISOString(), last_error: null }).eq("id", t.id).select("id"));
+}
+let nowPlaying = null;
+function previewButton(getVoiceId, label = "▶ Ouvir") {
+  const btn = h("button", { class: "ghost", type: "button", style: "flex:none;min-width:0" }, label);
+  btn.addEventListener("click", async () => {
+    const vid = getVoiceId();
+    if (!vid) { toast("Escolha uma voz para ouvir (ou use a padrão do canal).", "err"); return; }
+    btn.disabled = true;
+    try {
+      let url = await previewUrl(vid);
+      if (!url) {
+        await requestPreview(vid);
+        for (let i = 0; i < 60 && !url; i++) {
+          btn.textContent = "Gerando amostra… (pode levar 2 min)";
+          await new Promise((r) => setTimeout(r, 5000));
+          url = await previewUrl(vid);
+          if (i % 6 === 5) { const [t] = await load(sb.from("tasks").select("status,last_error").eq("idempotency_key", `vprev:${vid}`)); if (t?.status === "FAILED") throw new Error(`Amostra falhou: ${t.last_error ?? "erro"}`); }
+        }
+        if (!url) throw new Error("A amostra demorou demais. Tente de novo em instantes.");
+      }
+      nowPlaying?.pause();
+      nowPlaying = new Audio(url);
+      await nowPlaying.play();
+    } catch (e) { fail(e); }
+    btn.textContent = label; btn.disabled = false;
+  });
+  return btn;
+}
+
 async function viewVoices() {
-  const rows = await load(sb.from("voice_profiles").select("name,engine,category,license").order("name"));
-  app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vozes"),
-    rows.length ? rows.map((v) => h("div", { class: "item" }, h("div", {}, h("strong", {}, v.name), h("div", { class: "mut" }, `${v.engine} · ${v.category ?? ""} · ${v.license}`)))) : h("p", { class: "mut" }, "Nenhuma voz. Rode a migration 0002 no Supabase.")));
+  const rows = await load(sb.from("voice_profiles").select("id,name,engine,category,license").order("name"));
+  app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vozes"), h("p", { class: "mut" }, "Clique em Ouvir para escutar uma amostra. Na primeira vez ela é gerada (até 2 min) e fica guardada."),
+    rows.length ? rows.map((v) => h("div", { class: "item" }, h("div", {}, h("strong", {}, v.name), h("div", { class: "mut" }, `${v.engine} · ${v.category ?? ""} · ${v.license}`)), previewButton(() => v.id))) : h("p", { class: "mut" }, "Nenhuma voz. Rode a migration 0002 no Supabase.")));
+}
+
+function musicPlay(m) {
+  return h("button", { class: "ghost", type: "button", onclick: async (ev) => {
+    ev.target.disabled = true;
+    try {
+      await signUrls([m.storage_key]);
+      const u = signed.get(m.storage_key)?.url;
+      if (!u) throw new Error("Não consegui abrir a música.");
+      nowPlaying?.pause(); nowPlaying = new Audio(u); await nowPlaying.play();
+    } catch (e) { fail(e); }
+    ev.target.disabled = false;
+  } }, "▶ Ouvir");
 }
 
 async function viewMusic() {
@@ -271,7 +324,7 @@ async function viewMusic() {
   app.replaceChildren(
     h("div", { class: "card" }, h("h2", {}, "Músicas de fundo"),
       h("p", { class: "mut" }, "Envie só faixas que você pode usar em vídeo monetizado (Pixabay Music, YouTube Audio Library, CC0…). Em cada vídeo a música toca baixinho, abaixa quando há narração e some no final."),
-      rows.length ? rows.map((m) => h("div", { class: "item" }, h("div", {}, h("strong", {}, m.name), h("div", { class: "mut" }, `${m.category ?? "sem clima"} · ${m.license} · ${m.bytes ? (m.bytes / 1048576).toFixed(1) + " MB" : ""}`)), delMusic(m)))
+      rows.length ? rows.map((m) => h("div", { class: "item" }, h("div", {}, h("strong", {}, m.name), h("div", { class: "mut" }, `${m.category ?? "sem clima"} · ${m.license} · ${m.bytes ? (m.bytes / 1048576).toFixed(1) + " MB" : ""}`)), h("div", { class: "row", style: "gap:8px;flex-wrap:nowrap" }, musicPlay(m), delMusic(m))))
         : h("p", { class: "mut" }, "Nenhuma música ainda. Sem músicas, o vídeo sai só com a narração.")),
     h("div", { class: "card" }, h("h3", {}, "Nova música"), field("Arquivo (mp3, wav, ogg, m4a)", file), field("Nome", name), field("Clima", mood), field("Licença", lic), field("Link de origem", src), btn));
 }
