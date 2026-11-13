@@ -403,6 +403,71 @@ function seoBox(seo) {
     h("label", {}, "Tags (cole no campo de tags do YouTube)"), h("div", { class: "mut", style: "word-break:break-word" }, tags), copyBtn(() => tags, "Copiar tags"));
 }
 
+const fmtTime = (t) => { const s = Math.max(0, t); const m = Math.floor(s / 60); return `${m}:${(s % 60).toFixed(1).padStart(4, "0")}`; };
+
+async function viewCuts() {
+  const exps = (await load(sb.from("project_exports").select("id,project_id,created_at,projects!inner(title,deleted_at),media_assets(origin_url)").is("projects.deleted_at", null).order("created_at", { ascending: false })))
+    .filter((e) => e.media_assets?.origin_url?.includes("/releases/download/"));
+  if (!exps.length) { app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Cortes"), h("p", { class: "mut" }, "Ainda não há vídeos com download direto para cortar. Gere um vídeo novo e ele aparece aqui."))); return; }
+  const sel = h("select", {}, ...exps.map((e) => h("option", { value: e.id }, e.projects.title)));
+  const video = h("video", { controls: true, preload: "metadata", style: "width:100%;max-width:820px;border-radius:10px;background:#000" });
+  const setSrc = () => { video.src = exps.find((e) => e.id === sel.value).media_assets.origin_url; segs.length = 0; mark.a = mark.b = null; renderSegs(); };
+  const segs = [], mark = { a: null, b: null };
+  const markInfo = h("span", { class: "mut" });
+  const segBox = h("div", {});
+  const renderSegs = () => {
+    markInfo.textContent = `Início: ${mark.a == null ? "—" : fmtTime(mark.a)} · Fim: ${mark.b == null ? "—" : fmtTime(mark.b)}`;
+    segBox.replaceChildren(...(segs.length ? segs.map((g, i) => h("div", { class: "item" }, h("span", {}, `${i + 1}. ${fmtTime(g.in)} → ${fmtTime(g.out)}  (${(g.out - g.in).toFixed(1)} s)`),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:nowrap" }, h("button", { class: "ghost", type: "button", style: "flex:none;min-width:0", onclick: () => { video.currentTime = g.in; video.play(); } }, "▶ Ver"),
+        h("button", { class: "ghost danger", type: "button", style: "flex:none;min-width:0", onclick: () => { segs.splice(i, 1); renderSegs(); } }, "Remover")))) : [h("p", { class: "mut" }, "Nenhum trecho ainda: marque início e fim e clique em “Adicionar trecho”.")]));
+  };
+  const btn = (label, fn, cls = "ghost") => h("button", { class: cls, type: "button", style: "flex:none;min-width:0", onclick: fn }, label);
+  const mode = h("select", {}, h("option", { value: "fast" }, "Rápido (sem recodificar, ±1 s de precisão)"), h("option", { value: "precise" }, "Preciso (recodifica, mais lento)"));
+  const fmt = h("select", {}, h("option", { value: "h" }, "Horizontal 16:9 (igual ao original)"), h("option", { value: "v" }, "Vertical 9:16 para Shorts (fundo desfocado)"));
+  const name = h("input", { placeholder: "Nome do corte (ex.: Gancho – buraco negro)" });
+  const create = h("button", { class: "pri" }, "Criar corte");
+  create.addEventListener("click", async () => {
+    try {
+      if (!segs.length) throw new Error("Adicione ao menos um trecho.");
+      if (!name.value.trim()) throw new Error("Dê um nome ao corte.");
+      create.disabled = true;
+      const e = exps.find((x) => x.id === sel.value);
+      const vertical = fmt.value === "v";
+      const [row] = await load(sb.from("video_cuts").insert({ user_id: user.id, project_id: e.project_id, export_id: e.id, segments: segs.map((g) => ({ in: +g.in.toFixed(2), out: +g.out.toFixed(2) })), mode: vertical ? "precise" : mode.value, vertical, name: name.value.trim(), status: "queued" }).select("id"));
+      await load(sb.from("tasks").insert({ user_id: user.id, project_id: e.project_id, type: "cut_video", status: "QUEUED", priority: 5, payload: { cut_id: row.id }, idempotency_key: `cut:${row.id}`, timeout_s: 3000 }).select("id"));
+      toast("Corte na fila. Leva alguns minutos; acompanhe na lista abaixo.");
+      segs.length = 0; name.value = ""; renderSegs(); refreshList();
+    } catch (err) { fail(err); }
+    create.disabled = false;
+  });
+  const listBox = h("div", {});
+  const STATUS_CUT = { queued: "na fila", running: "cortando…", done: "pronto", failed: "falhou" };
+  async function refreshList() {
+    const rows = await load(sb.from("video_cuts").select("id,name,status,error,vertical,mode,created_at,segments,media_assets!output_asset_id(origin_url,bytes)").order("created_at", { ascending: false }).limit(30));
+    listBox.replaceChildren(...(rows.length ? rows.map((c) => h("div", { class: "item", style: "flex-wrap:wrap" },
+      h("div", { style: "flex:1;min-width:0" }, h("strong", {}, c.name || "Corte"), h("div", { class: "mut" }, `${c.vertical ? "Vertical 9:16" : "Horizontal"} · ${c.segments.length} trecho(s) · ${new Date(c.created_at).toLocaleString("pt-BR")}`),
+        c.status === "failed" && c.error ? h("div", { class: "mut", style: "color:var(--err)" }, c.error) : null),
+      h("span", { class: `pill ${c.status === "done" ? "ok" : c.status === "failed" ? "bad" : "run"}` }, STATUS_CUT[c.status] ?? c.status),
+      c.status === "done" && c.media_assets?.origin_url ? h("a", { class: "btn", href: c.media_assets.origin_url, download: "" }, "⬇ Baixar") : null))
+      : [h("p", { class: "mut" }, "Nenhum corte criado ainda.")]));
+    return rows;
+  }
+  sel.addEventListener("change", setSrc);
+  app.replaceChildren(
+    h("div", { class: "card" }, h("h2", {}, "Cortes do vídeo pronto"),
+      h("p", { class: "mut" }, "O vídeo original não é alterado: cada corte vira um novo arquivo. Toque o vídeo, marque o início e o fim e adicione quantos trechos quiser (eles são juntados na ordem)."),
+      field("Vídeo", sel), h("div", { style: "margin-top:12px" }, video),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center" },
+        btn("⏱ Início = agora", () => { mark.a = video.currentTime; renderSegs(); }), btn("⏱ Fim = agora", () => { mark.b = video.currentTime; renderSegs(); }),
+        btn("＋ Adicionar trecho", () => { if (mark.a == null || mark.b == null || mark.b <= mark.a) { toast("Marque início e fim (fim depois do início).", "err"); return; } segs.push({ in: mark.a, out: mark.b }); mark.a = mark.b = null; renderSegs(); }, "pri"), markInfo),
+      h("h3", { style: "margin-top:16px" }, "Trechos"), segBox,
+      h("div", { class: "row" }, field("Formato", fmt), field("Precisão", mode)), field("Nome", name), create),
+    h("div", { class: "card" }, h("h2", {}, "Seus cortes"), listBox));
+  setSrc(); renderSegs();
+  const rows = await refreshList();
+  poll = setInterval(() => { if (tab === "cuts" && !document.hidden) refreshList().catch(() => {}); }, 4000);
+}
+
 async function viewReady() {
   const rows = await load(sb.from("project_exports")
     .select("id,project_id,created_at,projects!inner(id,title,seo,deleted_at),media_assets(storage_backend,bytes,origin_url)").is("projects.deleted_at", null).order("created_at", { ascending: false }));
@@ -437,7 +502,7 @@ async function viewReady() {
 }
 
 // ---------- navegacao ----------
-const TABS = { home: ["Início", viewHome, "🏠"], projects: ["Projetos", viewProjects, "📁"], ready: ["Vídeos prontos", viewReady, "🎬"], music: ["Músicas", viewMusic, "🎵"], new: ["Novo projeto", viewNew, "➕"], channels: ["Canais", viewChannels, "📡"], voices: ["Vozes", viewVoices, "🎙"] };
+const TABS = { home: ["Início", viewHome, "🏠"], projects: ["Projetos", viewProjects, "📁"], ready: ["Vídeos prontos", viewReady, "🎬"], cuts: ["Cortes", viewCuts, "✂️"], music: ["Músicas", viewMusic, "🎵"], new: ["Novo projeto", viewNew, "➕"], channels: ["Canais", viewChannels, "📡"], voices: ["Vozes", viewVoices, "🎙"] };
 function setTab(t) {
   tab = t;
   clearInterval(poll);
