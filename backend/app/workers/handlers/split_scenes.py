@@ -87,9 +87,9 @@ def run(task: dict, db, llm) -> dict:
                                "narration_text": s["narration"], "image_prompt": s["image_prompt"],
                                "camera_move": s["camera_move"], "transition": s["transition"],
                                "est_duration_s": round(len(_words(s["narration"])) / WORDS_PER_SECOND, 1)})
-    db.insert("scenes", scene_rows)
-    db.update("projects", f"id=eq.{project_id}", {"status": "storyboard"})
-    # o usuario revisa o storyboard antes de gastar cota com imagens
-    db.insert("tasks", [{"user_id": uid, "project_id": project_id, "type": "approve_storyboard",
-                         "status": "WAITING_APPROVAL", "payload": {}, "idempotency_key": f"approve:{ver_id}"}])
+    inserted = db.insert("scenes", scene_rows)
+    db.update("projects", f"id=eq.{project_id}", {"status": "producing"})
+    # geracao automatica (sem aprovacao): uma tarefa de imagem por cena; reexecucao nao duplica (idempotency_key)
+    db.insert("tasks", [{"user_id": uid, "project_id": project_id, "type": "generate_image", "status": "QUEUED",
+                         "payload": {"scene_id": r["id"]}, "idempotency_key": f"img:{r['id']}"} for r in inserted])
     return {"chapters": len(chapters), "scenes": len(scene_rows)}

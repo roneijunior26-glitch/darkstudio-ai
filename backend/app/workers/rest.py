@@ -41,5 +41,24 @@ class Rest:
     def delete(self, table: str, query: str):
         return self._call("DELETE", f"{table}?{query}")
 
+    def count(self, table: str, query: str = "") -> int:
+        headers = {"apikey": self.key, "Authorization": f"Bearer {self.key}", "Prefer": "count=exact", "Range": "0-0"}
+        req = urllib.request.Request(f"{self.url}/rest/v1/{table}?{query}&select=id", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                total = r.headers.get("Content-Range", "*/0").split("/")[-1]
+        except urllib.error.HTTPError as e:
+            raise RestError(f"count {table} -> HTTP {e.code}") from None
+        return int(total) if total.isdigit() else 0
+
+    def upload(self, bucket: str, path: str, data: bytes, content_type: str):
+        req = urllib.request.Request(f"{self.url}/storage/v1/object/{bucket}/{path}", data=data, method="POST",
+                                     headers={"apikey": self.key, "Authorization": f"Bearer {self.key}",
+                                              "Content-Type": content_type, "x-upsert": "true"})
+        try:
+            urllib.request.urlopen(req, timeout=120).read()
+        except urllib.error.HTTPError as e:
+            raise RestError(f"upload {bucket}/{path} -> HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}") from None
+
     def rpc(self, fn: str, args: dict | None = None):
         return self._call("POST", f"rpc/{fn}", args or {})
