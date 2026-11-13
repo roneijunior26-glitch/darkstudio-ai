@@ -12,8 +12,6 @@ from ..errors import PermanentError
 
 def run(task: dict, db, download, outdir: str | None = None, clip_fn=None) -> dict:
     pid = task["project_id"]
-    if not render.have_ffmpeg():
-        raise PermanentError("ffmpeg nao instalado no worker")
     scenes = db.select("scenes", f"project_id=eq.{pid}&deleted_at=is.null&order=position"
                                  "&select=id,position,narration_text,camera_move,transition,duration_s,"
                                  "image:media_assets!image_asset_id(storage_key),audio:media_assets!audio_asset_id(storage_key)")
@@ -23,6 +21,8 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None) -> di
     if missing:
         raise RuntimeError(f"cenas sem imagem/narracao: {missing[:10]} (tenta de novo)")  # retry: assets ainda chegando
 
+    if not render.have_ffmpeg():
+        raise PermanentError("ffmpeg nao instalado no worker")
     db.update("projects", f"id=eq.{pid}", {"status": "rendering"})
     clip_fn = clip_fn or render.render_clip
     out_dir = Path(outdir or os.environ.get("OUTPUT_DIR", "out"))
