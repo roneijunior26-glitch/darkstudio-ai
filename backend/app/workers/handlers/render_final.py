@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 import shutil
 import tempfile
@@ -13,6 +14,18 @@ from ..errors import PermanentError
 
 def safe_name(title: str) -> str:
     return re.sub(r"[^\w\- ]+", "", title).strip()[:80] or "video"
+
+
+def pick_music(db, user_id: str, proj: dict):
+    """Faixa escolhida no projeto; senao uma aleatoria da biblioteca; None se desligada/sem faixas."""
+    if proj.get("music_enabled") is False:
+        return None
+    if proj.get("music_id"):
+        rows = db.select("music_assets", f"id=eq.{proj['music_id']}&select=name,storage_key")
+        if rows and rows[0].get("storage_key"):
+            return rows[0]
+    rows = [r for r in db.select("music_assets", f"user_id=eq.{user_id}&select=name,storage_key") if r.get("storage_key")]
+    return random.choice(rows) if rows else None
 
 
 def default_publish(path: Path, name: str) -> dict:
@@ -41,8 +54,9 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None, publi
 
     if not render.have_ffmpeg():
         raise PermanentError("ffmpeg nao instalado no worker")
-    proj = db.select("projects", f"id=eq.{pid}&select=title")
+    proj = db.select("projects", f"id=eq.{pid}&select=title,music_enabled,music_id")
     title = safe_name(proj[0]["title"] if proj else pid)
+    track = pick_music(db, task["user_id"], proj[0] if proj else {})
     db.update("projects", f"id=eq.{pid}", {"status": "rendering"})
     clip_fn = clip_fn or render.render_clip
     out_dir = Path(outdir or os.environ.get("OUTPUT_DIR", "out"))
@@ -61,6 +75,15 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None, publi
             img.unlink(); aud.unlink()
         final = work / "final.mp4"
         render.concat(clips, final)
+        if track:
+            try:
+                mus = work / "music.audio"
+                mus.write_bytes(download("media", track["storage_key"]))
+                mixed = work / "mixed.mp4"
+                render.mix_music(final, mus, mixed, total)
+                final = mixed
+            except Exception as e:  # musica e extra: nunca derruba o video
+                print(f"[worker] sem musica de fundo ({e})", flush=True)
         target = out_dir / f"{pid}.mp4"
         shutil.move(str(final), target)
     finally:

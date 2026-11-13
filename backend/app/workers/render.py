@@ -94,5 +94,15 @@ def concat(clips: list[Path], out: Path) -> None:
     run_ffmpeg(["-f", "concat", "-safe", "0", "-i", lst.name, "-c", "copy", "-movflags", "+faststart", str(out)], cwd=out.parent)
 
 
+def mix_music(video: Path, music: Path, out: Path, duration: float, gain: float = 0.28) -> None:
+    """Mistura a trilha em loop sob a narracao: fade in/out e 'ducking' (a musica abaixa quando ha fala). Video e copiado sem recodificar."""
+    fo = max(0.0, duration - 4)
+    graph = (f"[1:a]volume={gain},afade=t=in:d=3,afade=t=out:st={fo:.2f}:d=4[m];"
+             "[0:a]asplit[n1][n2];[m][n1]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=500[d];"
+             "[n2][d]amix=inputs=2:duration=first:normalize=0[a]")
+    run_ffmpeg(["-i", video.name, "-stream_loop", "-1", "-i", music.name, "-filter_complex", graph, "-map", "0:v", "-map", "[a]",
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{duration:.2f}", "-movflags", "+faststart", str(out)], cwd=out.parent)
+
+
 def have_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None
