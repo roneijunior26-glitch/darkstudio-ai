@@ -5,9 +5,9 @@ import os
 import time
 from datetime import datetime, timezone
 
-from . import cloudflare, gemini, tts
+from . import gh_release, cloudflare, gemini, tts
 from .errors import PermanentError, WaitQuota
-from .handlers import generate_audio, generate_image, generate_seo, generate_thumbnail, render_final, split_scenes, voice_preview
+from .handlers import delete_project, generate_audio, generate_image, generate_seo, generate_thumbnail, render_final, split_scenes, voice_preview
 from .queue import retry_at, status_after_failure
 from .rest import Rest
 
@@ -32,6 +32,7 @@ def handlers(db: Rest):
         "generate_audio": lambda t: generate_audio.run(t, db, tts.synthesize),
         "generate_seo": lambda t: generate_seo.run(t, db, gemini.generate_json),
         "generate_thumbnail": lambda t: generate_thumbnail.run(t, db, gemini.generate_json, cloudflare.generate, _compose()),
+        "delete_project": lambda t: delete_project.run(t, db, gh_release.delete),
         "voice_preview": lambda t: voice_preview.run(t, db, tts.synthesize),
         "render_final": lambda t: render_final.run(t, db, db.download),
     }
