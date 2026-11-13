@@ -9,7 +9,7 @@ from ...providers.base import CostTier, UsageEstimate
 from ...providers.cost_guard import Decision, check
 from ..errors import PermanentError, WaitQuota
 
-STYLE_SUFFIX = ", dark moody cinematic, subject centered in frame, good contrast, highly detailed, no text, no watermark"
+STYLE_SUFFIX = ", dark moody cinematic, subject centered in frame, good contrast, sharp focus, intricate fine details, crisp textures, wide cinematic composition, no text, no watermark"
 
 
 def daily_limit() -> float:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -45,6 +46,9 @@ def build_ass(text: str, duration: float) -> str:
             "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n" + "\n".join(lines) + "\n")
 
 
+CRF = os.environ.get("RENDER_CRF", "19")  # menor = mais nitido e arquivo maior
+
+
 def zoompan(camera: str, frames: int) -> str:
     n = max(frames, 1)
     c = "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
@@ -63,7 +67,7 @@ def zoompan(camera: str, frames: int) -> str:
 
 def clip_filter(camera: str, transition: str, duration: float, ass_path: str) -> str:
     frames = round(duration * FPS)
-    chain = [f"crop=iw:trunc(iw*9/16/2)*2", "scale=2880:-2", f"zoompan={zoompan(camera, frames)}", "format=yuv420p"]
+    chain = [f"crop=iw:trunc(iw*9/16/2)*2", "scale=2880:-2:flags=lanczos", f"zoompan={zoompan(camera, frames)}", "unsharp=5:5:0.7:5:5:0.0", "format=yuv420p"]
     if transition == "fade":
         chain += ["fade=t=in:st=0:d=0.3", f"fade=t=out:st={max(duration - 0.3, 0):.2f}:d=0.3"]
     chain.append(f"subtitles={ass_path}")
@@ -82,7 +86,7 @@ def render_clip(image: Path, audio: Path, scene: dict, audio_dur: float, out: Pa
     ass.write_text(build_ass(scene["narration_text"], audio_dur))
     run_ffmpeg(["-loop", "1", "-framerate", str(FPS), "-i", str(image), "-i", str(audio),
                 "-vf", clip_filter(scene.get("camera_move") or "slow_zoom_in", scene.get("transition") or "fade", dur, ass.name),
-                "-af", "apad", "-t", str(dur), "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-g", str(FPS),
+                "-af", "apad", "-t", str(dur), "-c:v", "libx264", "-preset", "veryfast", "-crf", CRF, "-g", str(FPS),
                 "-keyint_min", str(FPS), "-r", str(FPS), "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
                 "-movflags", "+faststart", str(out)], cwd=out.parent)  # cwd: o filtro subtitles usa caminho relativo
     return dur
