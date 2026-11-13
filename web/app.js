@@ -175,11 +175,7 @@ async function viewProjects() {
             pr.failed ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
               ev.target.disabled = true;
               try { const { data, error } = await sb.rpc("retry_failed_tasks", { p_project: p.id }); if (error) throw error; toast(`${data} tarefa(s) devolvida(s) à fila.`); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
-            } }, "Tentar de novo as que falharam") : null,
-            sc && sc.some((x) => !x.image || !x.audio_asset_id) ? h("button", { class: "ghost", style: "flex:none;min-width:0", onclick: async (ev) => {
-              ev.target.disabled = true;
-              try { const n = await enqueueMissing(p.id, sc); toast(n ? "Imagens e narração na fila." : "Nada a gerar."); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
-            } }, "Gerar imagens e narração") : null),
+            } }, "Tentar de novo as que falharam") : null),
           sc ? h("div", { style: "flex-basis:100%" }, sc.length ? sc.map((x) => h("div", { class: "item", style: "justify-content:flex-start;align-items:flex-start" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
             h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null);
