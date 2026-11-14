@@ -157,3 +157,5 @@ main.enter>*{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}main.enter>*:nth-c
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (hover:none){.card,.stat,.pcard,.hero,.quick button{transform:none}}
 @media (max-width:820px){#side{backdrop-filter:blur(14px)}.hero h1{font-size:28px}.hero{padding:24px 20px}#nav button.on::before{display:none}}
+
+.logoprev{width:64px;height:64px;object-fit:contain;border-radius:12px;padding:4px;background:#0a0f20;border:1px solid #ffffff1c;flex:none;min-width:0}

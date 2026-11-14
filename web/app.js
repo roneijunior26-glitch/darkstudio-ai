@@ -281,6 +281,7 @@ async function viewChannels() {
       toast("Canal salvo."); viewChannels().catch(fail);
     } catch (e) { fail(e); addCh.disabled = false; }
   });
+  await signUrls(chs.map((c) => c.logo_key).filter(Boolean)).catch(() => {});
   const logoCtl = (c) => {
     const file = h("input", { type: "file", accept: "image/png,image/webp,image/jpeg", style: "display:none" });
     file.addEventListener("change", async () => {
@@ -298,7 +299,9 @@ async function viewChannels() {
     const rm = c.logo_key ? h("button", { class: "ghost", onclick: async () => {
       try { await load(sb.from("channels").update({ logo_key: null }).eq("id", c.id).select("id")); await sb.storage.from("media").remove([c.logo_key]); toast("Logo removida."); viewChannels().catch(fail); } catch (e) { fail(e); }
     } }, "Remover logo") : null;
-    return h("span", { class: "row", style: "flex:none;gap:8px;align-items:center" }, file,
+    const url = c.logo_key && signed.get(c.logo_key)?.url;
+    return h("span", { class: "row", style: "flex:none;gap:10px;align-items:center;margin-top:8px" }, file,
+      url ? h("img", { class: "logoprev", src: url, alt: "Logo do canal" }) : h("span", { class: "mut" }, "Sem logo"),
       h("button", { class: "ghost", onclick: () => file.click() }, c.logo_key ? "Trocar logo" : "Enviar logo"), rm);
   };
   app.replaceChildren(
