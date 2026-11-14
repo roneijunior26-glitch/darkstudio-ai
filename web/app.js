@@ -58,7 +58,7 @@ function authView() {
 const load = async (q) => { const { data, error } = await q; if (error) throw error; return data; };
 const voices = () => load(sb.from("voice_profiles").select("id,name,engine,category").order("name"));
 const niches = () => load(sb.from("niche_presets").select("id,name,visual_style,default_voice_id").order("name"));
-const channels = () => load(sb.from("channels").select("id,name,tone,audience,niche_preset_id,default_voice_id").order("name"));
+const channels = () => load(sb.from("channels").select("id,name,tone,audience,niche_preset_id,default_voice_id,logo_key").order("name"));
 
 // ---------- telas ----------
 const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imagens", generate_audio: "Gerando narração", build_subtitles: "Legendas", render_clip: "Montando cenas", render_final: "Renderizando vídeo", upload: "Enviando", approve_storyboard: "Aguardando sua revisão do storyboard" };
@@ -281,9 +281,30 @@ async function viewChannels() {
       toast("Canal salvo."); viewChannels().catch(fail);
     } catch (e) { fail(e); addCh.disabled = false; }
   });
+  const logoCtl = (c) => {
+    const file = h("input", { type: "file", accept: "image/png,image/webp,image/jpeg", style: "display:none" });
+    file.addEventListener("change", async () => {
+      try {
+        const f = file.files[0]; if (!f) return;
+        if (f.size > 5 * 1024 * 1024) throw new Error("Logo maior que 5 MB.");
+        const key = `${user.id}/logos/${crypto.randomUUID()}.${f.type === "image/jpeg" ? "jpg" : f.type === "image/webp" ? "webp" : "png"}`;
+        const up = await sb.storage.from("media").upload(key, f, { contentType: f.type || "image/png" });
+        if (up.error) throw up.error;
+        await load(sb.from("channels").update({ logo_key: key }).eq("id", c.id).select("id"));
+        if (c.logo_key) await sb.storage.from("media").remove([c.logo_key]);
+        toast("Logo salva. Vale para os próximos vídeos."); viewChannels().catch(fail);
+      } catch (e) { fail(e); }
+    });
+    const rm = c.logo_key ? h("button", { class: "ghost", onclick: async () => {
+      try { await load(sb.from("channels").update({ logo_key: null }).eq("id", c.id).select("id")); await sb.storage.from("media").remove([c.logo_key]); toast("Logo removida."); viewChannels().catch(fail); } catch (e) { fail(e); }
+    } }, "Remover logo") : null;
+    return h("span", { class: "row", style: "flex:none;gap:8px;align-items:center" }, file,
+      h("button", { class: "ghost", onclick: () => file.click() }, c.logo_key ? "Trocar logo" : "Enviar logo"), rm);
+  };
   app.replaceChildren(
     h("div", { class: "card" }, h("h2", {}, "Canais"),
-      chs.length ? chs.map((c) => h("div", { class: "item" }, h("div", {}, h("strong", {}, c.name), h("div", { class: "mut" }, [c.tone, c.audience].filter(Boolean).join(" · ") || "—")),
+      h("p", { class: "mut" }, "A logo do canal aparece como marca d'água no canto inferior direito dos vídeos (use PNG com fundo transparente)."),
+      chs.length ? chs.map((c) => h("div", { class: "item" }, h("div", {}, h("strong", {}, c.name), h("div", { class: "mut" }, [c.tone, c.audience].filter(Boolean).join(" · ") || "—"), logoCtl(c)),
         h("span", { class: "tag" }, nis.find((n) => n.id === c.niche_preset_id)?.name ?? "sem nicho"), del("channels", c.id, `o canal “${c.name}”`))) : h("p", { class: "mut" }, "Nenhum canal."),
       h("h3", { style: "margin-top:18px" }, "Novo canal"), field("Nome", cName),
       h("div", { class: "row" }, field("Nicho", cNiche), field("Voz", cVoice)),

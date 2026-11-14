@@ -221,3 +221,21 @@ def test_default_publish_prefers_release_then_artifact(monkeypatch, tmp_path):
     monkeypatch.setattr(gh_release, "publish", lambda p, t: (_ for _ in ()).throw(gh_release.ReleaseError("403")))
     r = render_final.default_publish(f, "Titulo.mp4")
     assert r["key"] == "video-5" and f.exists()
+
+
+@needs_ffmpeg
+def test_logo_watermark_appears_bottom_right(tmp_path):
+    from app.workers import render
+    img, logo = tmp_path / "i.jpg", tmp_path / "logo.png"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=1024x1024", "-frames:v", "1", str(img)], check=True)
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=300x300", "-frames:v", "1", str(logo)], check=True)
+    wav = tmp_path / "a.wav"; wav.write_bytes(tts.pcm_to_wav(b"\x10\x00" * 24000, 24000))
+    scene = {"narration_text": "", "camera_move": "static", "transition": "none"}
+    px = {}
+    for name, lg in (("with", logo), ("without", None)):
+        out = tmp_path / f"{name}.mp4"
+        render.render_clip(img, wav, scene, 1.0, out, logo=lg)
+        frame = tmp_path / f"{name}.rgb"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out), "-vf", "crop=4:4:1750:950", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", str(frame)], check=True)
+        d = frame.read_bytes(); px[name] = (d[0], d[1], d[2])
+    assert px["with"][0] > 100 and px["without"][0] < 40  # vermelho so com a logo
