@@ -14,9 +14,11 @@ class FluxQuota(RuntimeError):
 
 
 def next_reset(now: datetime | None = None) -> datetime:
-    """Os 10.000 neurons gratis do Workers AI zeram a 00:00 UTC (21:00 em Brasilia); +5 min de folga."""
+    """Proxima tentativa apos 429: no maximo 1 h; os 10.000 neurons gratis zeram ~00:00 UTC (21:00 Brasilia)."""
     now = now or datetime.now(timezone.utc)
-    return now.replace(hour=0, minute=5, second=0, microsecond=0) + timedelta(days=1)
+    midnight = now.replace(hour=0, minute=5, second=0, microsecond=0) + timedelta(days=1)
+    # o reset real pode atrasar ou nao coincidir com 00:00 UTC: testa de novo a cada hora (429 nao gasta cota)
+    return min(midnight, now + timedelta(hours=1))
 
 
 class FluxError(RuntimeError):

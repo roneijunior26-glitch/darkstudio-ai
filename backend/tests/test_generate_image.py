@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import timedelta, datetime, timezone
 
 import pytest
 
@@ -98,4 +98,4 @@ def test_flux_429_becomes_wait_not_failure():
         raise cloudflare.FluxQuota("HTTP 429: you have used up your daily free allocation of 10,000 neurons")
     with pytest.raises(WaitQuota) as e:
         gi.run({"payload": {"scene_id": "s1"}}, db, flux, now=NOW)
-    assert e.value.until == datetime(2026, 11, 14, 0, 5, tzinfo=timezone.utc)
+    assert e.value.until == NOW + timedelta(hours=1)
