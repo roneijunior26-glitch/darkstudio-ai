@@ -48,6 +48,14 @@ def make_thumb(db, task: dict, pid: str, title: str, first_scene: dict, download
         shutil.rmtree(work, ignore_errors=True)
 
 
+def channel_logo_key(db, proj: dict) -> str | None:
+    cid = proj.get("channel_id")
+    if not cid:
+        return None
+    rows = db.select("channels", f"id=eq.{cid}&select=logo_key")
+    return rows[0].get("logo_key") if rows else None
+
+
 def title_of(db, pid: str) -> str | None:
     rows = db.select("projects", f"id=eq.{pid}&select=title")
     return rows[0]["title"] if rows and rows[0].get("title") else None
@@ -87,23 +95,32 @@ def run(task: dict, db, download, outdir: str | None = None, clip_fn=None, publi
 
     if not render.have_ffmpeg():
         raise PermanentError("ffmpeg nao instalado no worker")
-    proj = db.select("projects", f"id=eq.{pid}&select=title,music_enabled,music_id")
+    proj = db.select("projects", f"id=eq.{pid}&select=title,music_enabled,music_id,channel_id")
     title = safe_name(proj[0]["title"] if proj else pid)
     track = pick_music(db, task["user_id"], proj[0] if proj else {})
     db.update("projects", f"id=eq.{pid}", {"status": "rendering"})
     clip_fn = clip_fn or render.render_clip
+    logo_key = channel_logo_key(db, proj[0] if proj else {})
     out_dir = Path(outdir or os.environ.get("OUTPUT_DIR", "out"))
     out_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="render-"))
     try:
         clips, total = [], 0.0
+        logo = None
+        if logo_key:
+            try:
+                logo = work / "logo.png"
+                logo.write_bytes(download("media", logo_key))
+            except Exception as e:  # logo e extra: nunca derruba o video
+                print(f"[worker] sem logo ({e})", flush=True)
+                logo = None
         for s in scenes:
             img = work / f"{s['position']:03d}{Path(s['image']['storage_key']).suffix or '.jpg'}"
             aud = work / f"{s['position']:03d}.wav"
             img.write_bytes(download("media", s["image"]["storage_key"]))
             aud.write_bytes(download("media", s["audio"]["storage_key"]))
             clip = work / f"{s['position']:03d}.mp4"
-            total += clip_fn(img, aud, s, float(s["duration_s"]), clip)
+            total += clip_fn(img, aud, s, float(s["duration_s"]), clip, **({"logo": logo} if logo else {}))
             clips.append(clip)
             img.unlink(); aud.unlink()
         final = work / "final.mp4"

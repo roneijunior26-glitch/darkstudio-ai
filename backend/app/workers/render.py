@@ -80,12 +80,23 @@ def run_ffmpeg(args: list[str], cwd: Path | None = None) -> None:
         raise RuntimeError(f"ffmpeg falhou: {p.stderr[-400:]}")
 
 
-def render_clip(image: Path, audio: Path, scene: dict, audio_dur: float, out: Path) -> float:
+LOGO_W = os.environ.get("LOGO_WIDTH", "200")      # largura da logo no video 1920 px
+LOGO_OPACITY = os.environ.get("LOGO_OPACITY", "0.7")
+
+
+def logo_graph(chain: str) -> str:
+    """Aplica a logo (canto inferior direito, semitransparente) depois da legenda."""
+    return (f"[0:v]{chain}[v];[2:v]format=rgba,scale={LOGO_W}:-1:flags=lanczos,colorchannelmixer=aa={LOGO_OPACITY}[lg];"
+            "[v][lg]overlay=W-w-36:H-h-30:format=auto,format=yuv420p[o]")
+
+
+def render_clip(image: Path, audio: Path, scene: dict, audio_dur: float, out: Path, logo: Path | None = None) -> float:
     dur = round(audio_dur + PAD_S, 2)
     ass = out.with_suffix(".ass")
     ass.write_text(build_ass(scene["narration_text"], audio_dur))
-    run_ffmpeg(["-loop", "1", "-framerate", str(FPS), "-i", str(image), "-i", str(audio),
-                "-vf", clip_filter(scene.get("camera_move") or "slow_zoom_in", scene.get("transition") or "fade", dur, ass.name),
+    chain = clip_filter(scene.get("camera_move") or "slow_zoom_in", scene.get("transition") or "fade", dur, ass.name)
+    run_ffmpeg(["-loop", "1", "-framerate", str(FPS), "-i", str(image), "-i", str(audio), *(["-i", str(logo)] if logo else []),
+                *(["-filter_complex", logo_graph(chain), "-map", "[o]", "-map", "1:a"] if logo else ["-vf", chain]),
                 "-af", "apad", "-t", str(dur), "-c:v", "libx264", "-preset", "veryfast", "-crf", CRF, "-g", str(FPS),
                 "-keyint_min", str(FPS), "-r", str(FPS), "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
                 "-movflags", "+faststart", str(out)], cwd=out.parent)  # cwd: o filtro subtitles usa caminho relativo
