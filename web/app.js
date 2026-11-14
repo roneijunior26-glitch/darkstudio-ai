@@ -191,7 +191,7 @@ async function viewProjects() {
           h("div", {},
             h("div", { class: `bar${pr.failed ? " bad" : ""}` }, h("div", { style: `width:${pr.pct}%` })),
             h("div", { class: "mut" }, `${pr.label} · ${pr.pct}%${pr.total ? ` (${pr.done}/${pr.total} etapas)` : ""}`),
-            pr.waiting && !pr.failed ? h("div", { class: "mut", style: "color:#e8b84a" }, "⏳ A cota grátis do dia acabou. O app continua sozinho quando ela voltar (depois das 21:00, horário de Brasília).") : null,
+            pr.waiting && !pr.failed ? h("div", { class: "mut", style: "color:#e8b84a" }, "⏳ A cota grátis do dia acabou. O app tenta de novo a cada hora e continua sozinho quando ela voltar.") : null,
             pr.failed ? h("div", { class: "mut", style: "color:var(--err)" }, `Erro: ${(byProj.get(p.id) ?? []).find((t) => t.status === "FAILED")?.last_error ?? "desconhecido"}`) : null),
           p.status === "awaiting_approval" ? h("div", { class: "ready" }, "✅ Vídeo pronto! Baixe na aba ",
             h("a", { href: "#", onclick: (ev) => { ev.preventDefault(); setTab("ready"); } }, "Vídeos prontos"), ".") : null,
