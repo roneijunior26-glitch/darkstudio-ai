@@ -5,7 +5,7 @@ cv.id = "bg3d";
 document.body.prepend(cv);
 const ctx = cv.getContext("2d");
 let W = 0, H = 0, dpr = 1;
-const N = innerWidth < 700 ? 70 : 140;
+const N = innerWidth < 700 ? 40 : 70;
 const pts = Array.from({ length: N }, () => ({
   x: (Math.random() - .5) * 2.6, y: (Math.random() - .5) * 1.6, z: (Math.random() - .5) * 2.6,
   c: Math.random() < .5 ? [34, 230, 208] : Math.random() < .5 ? [139, 92, 255] : [255, 79, 216],
@@ -42,7 +42,7 @@ function frame(now) {
   for (let i = -8; i <= 8; i++) {
     for (const [a, b] of [[[i * .35, 1.1, -2.8], [i * .35, 1.1, 2.8]], [[-2.8, 1.1, i * .35], [2.8, 1.1, i * .35]]]) {
       const p = project(...a, f), q = project(...b, f);
-      const al = Math.max(0, .16 - Math.abs(i) * .012);
+      const al = Math.max(0, .10 - Math.abs(i) * .008);
       ctx.strokeStyle = `rgba(80,140,255,${al})`;
       ctx.beginPath(); ctx.moveTo(p.px, p.py); ctx.lineTo(q.px, q.py); ctx.stroke();
     }
@@ -54,18 +54,18 @@ function frame(now) {
   // ligações entre pontos próximos
   for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
     const dx = P[i].px - P[j].px, dy = P[i].py - P[j].py, dist = Math.hypot(dx, dy);
-    const lim = 150 * dpr;
+    const lim = 120 * dpr;
     if (dist < lim) {
-      ctx.strokeStyle = `rgba(${P[i].c[0]},${P[i].c[1]},${P[i].c[2]},${(1 - dist / lim) * .22})`;
+      ctx.strokeStyle = `rgba(${P[i].c[0]},${P[i].c[1]},${P[i].c[2]},${(1 - dist / lim) * .09})`;
       ctx.beginPath(); ctx.moveTo(P[i].px, P[i].py); ctx.lineTo(P[j].px, P[j].py); ctx.stroke();
     }
   }
   P.sort((a, b) => b.d - a.d);
   for (const p of P) {
-    const r = Math.max(.6, p.s * p.k * .0065) * dpr, a = Math.max(.15, Math.min(1, 1.6 - p.d * .35));
-    const g = ctx.createRadialGradient(p.px, p.py, 0, p.px, p.py, r * 5);
+    const r = Math.max(.5, p.s * p.k * .0016) * dpr, a = Math.max(.08, Math.min(.5, 1.2 - p.d * .3)) * .6;
+    const g = ctx.createRadialGradient(p.px, p.py, 0, p.px, p.py, r * 2.2);
     g.addColorStop(0, `rgba(${p.c[0]},${p.c[1]},${p.c[2]},${a})`); g.addColorStop(1, `rgba(${p.c[0]},${p.c[1]},${p.c[2]},0)`);
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.px, p.py, r * 5, 0, 6.283); ctx.fill();
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.px, p.py, r * 2.2, 0, 6.283); ctx.fill();
   }
   if (!reduce && !document.hidden) requestAnimationFrame(frame);
 }
