@@ -41,7 +41,7 @@ def run(task: dict, db, flux, now: datetime | None = None) -> dict:
     try:
         img = flux(scene["image_prompt"] + STYLE_SUFFIX)
     except cloudflare.FluxQuota as e:  # 429 real do provedor: espera a cota zerar em vez de gastar tentativas
-        raise WaitQuota(cloudflare.next_reset(now), "cota diaria gratis da Cloudflare acabou; continua sozinho apos 21:00 (Brasilia)") from e
+        raise WaitQuota(cloudflare.next_reset(now), f"cota diaria gratis da Cloudflare acabou; continua sozinho quando voltar ({str(e)[:160]})") from e
     ext, ctype = ("png", "image/png") if img[:4] == b"\x89PNG" else ("jpg", "image/jpeg")
     key = f"{scene['user_id']}/{scene['project_id']}/images/{scene_id}.{ext}"
     db.upload("media", key, img, ctype)
