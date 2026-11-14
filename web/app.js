@@ -528,6 +528,7 @@ const TABS = { home: ["Início", viewHome, "🏠"], projects: ["Projetos", viewP
 function setTab(t) {
   tab = t;
   clearInterval(poll);
+  app.classList.add("enter"); clearTimeout(setTab.t); setTab.t = setTimeout(() => app.classList.remove("enter"), 800); // anima só ao trocar de aba, não a cada atualização automática
   $("nav").replaceChildren(...Object.entries(TABS).map(([k, [label, , icon]]) => h("button", { class: k === tab ? "on" : "", onclick: () => setTab(k) }, h("span", { class: "ic" }, icon), label)));
   TABS[t][1]().catch(fail);
 }

@@ -152,7 +152,7 @@ label{letter-spacing:.06em;text-transform:uppercase;font-size:11px}
 #toast{background:#0c1224ee;backdrop-filter:blur(10px)}.update{background:#0c1224ee;border-color:var(--ac);box-shadow:0 0 20px #22e6d044}
 
 /* entrada suave das telas */
-main>*{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}main>*:nth-child(2){animation-delay:.06s}main>*:nth-child(3){animation-delay:.12s}main>*:nth-child(4){animation-delay:.18s}
+main.enter>*{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}main.enter>*:nth-child(2){animation-delay:.06s}main.enter>*:nth-child(3){animation-delay:.12s}main.enter>*:nth-child(4){animation-delay:.18s}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (hover:none){.card,.stat,.pcard,.hero,.quick button{transform:none}}
