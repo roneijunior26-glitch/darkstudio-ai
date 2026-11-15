@@ -119,6 +119,44 @@ def mix_music(video: Path, music: Path, out: Path, duration: float, gain: float 
                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{duration:.2f}", "-movflags", "+faststart", str(out)], cwd=out.parent)
 
 
+def audio_duration(path: Path) -> float:
+    p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+    try:
+        return float(p.stdout.strip())
+    except ValueError:
+        return 0.0
+
+
+def make_loop_unit(src: Path, out: Path, xfade: float = 4.0) -> float:
+    """Faixa pronta para repetir sem estalo: o final da faixa se funde com o comeco (crossfade). Retorna a duracao da unidade."""
+    t = audio_duration(src)
+    if t < xfade * 4:  # faixa curta demais para fundir: repete como esta
+        run_ffmpeg(["-i", str(src), "-c:a", "pcm_s16le", "-ar", "44100", str(out)])
+        return t
+    x = xfade
+    graph = (f"[0:a]atrim=0:{x},asetpts=PTS-STARTPTS,afade=t=in:d={x}:curve=qsin[h];"
+             f"[0:a]atrim={t - x:.3f}:{t:.3f},asetpts=PTS-STARTPTS,afade=t=out:d={x}:curve=qsin[t];"
+             f"[0:a]atrim={x}:{t - x:.3f},asetpts=PTS-STARTPTS[m];"
+             "[t][h]amix=inputs=2:duration=longest,volume=2[x];[x][m]concat=n=2:v=0:a=1[o]")  # amix divide por 2 (volume=2 compensa)
+    run_ffmpeg(["-i", str(src), "-filter_complex", graph, "-map", "[o]", "-c:a", "pcm_s16le", "-ar", "44100", str(out)])
+    return t - x
+
+
+def render_ambient(image: Path, loop_wav: Path, seconds: float, out: Path, logo: Path | None = None, fps: int = 6) -> None:
+    """Video longo de ambiente: 1 imagem fixa (1080p) + trilha em loop, com fade in/out. Quadro quase parado = arquivo pequeno."""
+    chain = "scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080,setsar=1"
+    if logo:
+        vf = ["-filter_complex", f"[0:v]{chain},format=rgba[v];[2:v]format=rgba,scale={LOGO_W}:-1:flags=lanczos,colorchannelmixer=aa={LOGO_OPACITY}[lg];"
+              "[v][lg]overlay=W-w-36:H-h-30,format=yuv420p[o]", "-map", "[o]", "-map", "1:a"]
+    else:
+        vf = ["-vf", chain + ",format=yuv420p", "-map", "0:v", "-map", "1:a"]
+    fo = max(0.0, seconds - 8)
+    run_ffmpeg(["-loop", "1", "-framerate", str(fps), "-i", str(image), "-stream_loop", "-1", "-i", str(loop_wav), *(["-i", str(logo)] if logo else []),
+                *vf, "-af", f"afade=t=in:d=3,afade=t=out:st={fo:.2f}:d=8",
+                "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", "24", "-g", str(fps * 10), "-r", str(fps),
+                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-t", f"{seconds:.2f}", "-movflags", "+faststart", str(out)])
+
+
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 

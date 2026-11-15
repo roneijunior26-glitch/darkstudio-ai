@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from . import gh_release, cloudflare, gemini, tts
 from .errors import PermanentError, WaitQuota
-from .handlers import cut_video, delete_project, generate_audio, generate_image, generate_seo, generate_thumbnail, render_final, split_scenes, voice_preview
+from .handlers import cut_video, delete_project, generate_audio, generate_image, generate_seo, generate_thumbnail, render_ambient, render_final, split_scenes, voice_preview
 from .queue import retry_at, status_after_failure
 from .rest import Rest
 
@@ -36,6 +36,7 @@ def handlers(db: Rest):
         "cut_video": lambda t: cut_video.run(t, db),
         "voice_preview": lambda t: voice_preview.run(t, db, tts.synthesize),
         "render_final": lambda t: render_final.run(t, db, db.download),
+        "render_ambient": lambda t: render_ambient.run(t, db, db.download, cloudflare.generate),
     }
 
 

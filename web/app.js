@@ -61,7 +61,7 @@ const niches = () => load(sb.from("niche_presets").select("id,name,visual_style,
 const channels = () => load(sb.from("channels").select("id,name,tone,audience,niche_preset_id,default_voice_id,logo_key").order("name"));
 
 // ---------- telas ----------
-const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imagens", generate_audio: "Gerando narração", build_subtitles: "Legendas", render_clip: "Montando cenas", render_final: "Renderizando vídeo", upload: "Enviando", approve_storyboard: "Aguardando sua revisão do storyboard" };
+const STEP = { split_scenes: "Dividindo em cenas", generate_image: "Gerando imagens", generate_audio: "Gerando narração", build_subtitles: "Legendas", render_clip: "Montando cenas", render_final: "Renderizando vídeo", render_ambient: "Montando vídeo de ambiente", upload: "Enviando", approve_storyboard: "Aguardando sua revisão do storyboard" };
 const STATUS_PT = { draft: "rascunho", scripting: "roteiro", storyboard: "storyboard", producing: "produzindo", rendering: "renderizando", awaiting_approval: "aguardando aprovação", completed: "concluído", failed: "falhou" };
 let poll = null;
 const openScenes = new Set();
@@ -209,6 +209,42 @@ async function viewProjects() {
   };
   await draw();
   poll = setInterval(() => { if (tab === "projects" && !document.hidden) draw().catch(() => {}); }, 3000);
+}
+
+async function viewAmbient() {
+  const [chs, musics] = await Promise.all([channels(), load(sb.from("music_assets").select("id,name,category").order("name"))]);
+  if (!chs.length) { app.replaceChildren(h("div", { class: "card" }, h("p", {}, "Cadastre um canal primeiro, na aba Canais."))); return; }
+  const title = h("input", { placeholder: "Título (ex.: Som de chuva para dormir — 3 horas)" });
+  const ch = h("select", {}, options(chs, "Escolha o canal").slice(1));
+  const track = h("select", {}, h("option", { value: "" }, "Escolha a faixa de áudio"), ...musics.map((m) => h("option", { value: m.id }, m.name)));
+  const hours = h("select", {}, ...[[1, "1 hora"], [2, "2 horas"], [3, "3 horas"], [4, "4 horas"], [6, "6 horas"], [8, "8 horas"], [10, "10 horas"]].map(([v, t]) => h("option", { value: v }, t)));
+  const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp" });
+  const prompt = h("textarea", { placeholder: "…ou descreva a imagem para a IA criar (em inglês funciona melhor). Ex.: cozy window at night with heavy rain, warm lamp, cinematic" });
+  const btn = h("button", { class: "pri" }, "Criar vídeo de ambiente");
+  btn.addEventListener("click", async () => {
+    try {
+      const f = file.files[0];
+      if (!title.value.trim() || !track.value) throw new Error("Preencha o título e escolha a faixa de áudio.");
+      if (!f && !prompt.value.trim()) throw new Error("Envie uma imagem ou descreva a imagem para a IA criar.");
+      if (f && f.size > 20 * 1024 * 1024) throw new Error("Imagem maior que 20 MB.");
+      btn.disabled = true;
+      let image_key = null;
+      if (f) {
+        image_key = `${user.id}/ambient/${crypto.randomUUID()}.${f.type === "image/png" ? "png" : f.type === "image/webp" ? "webp" : "jpg"}`;
+        const up = await sb.storage.from("media").upload(image_key, f, { contentType: f.type || "image/jpeg" });
+        if (up.error) throw up.error;
+      }
+      const [proj] = await load(sb.from("projects").insert({ user_id: user.id, channel_id: ch.value, title: title.value.trim(), input_mode: "idea", status: "producing" }).select("id"));
+      await load(sb.from("tasks").insert({ user_id: user.id, project_id: proj.id, type: "render_ambient", status: "QUEUED", priority: 5, timeout_s: 7000,
+        payload: { track_id: track.value, hours: +hours.value, ...(image_key ? { image_key } : { image_prompt: prompt.value.trim() }) }, idempotency_key: `ambient:${proj.id}` }).select("id"));
+      toast("Vídeo de ambiente na fila. Acompanhe em Projetos.");
+      setTab("projects");
+    } catch (e) { fail(e); btn.disabled = false; }
+  });
+  app.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Vídeo de ambiente"),
+    h("p", { class: "mut" }, "Uma imagem fixa com um som em loop por horas (chuva, fogueira, mar…). Envie antes o áudio na aba Músicas. A logo do canal entra como marca d'água."),
+    field("Título", title), h("div", { class: "row" }, field("Canal", ch), field("Duração", hours)), field("Faixa de áudio (da aba Músicas)", track),
+    field("Imagem (envie uma)", file), prompt, btn));
 }
 
 async function viewNew() {
@@ -548,7 +584,7 @@ async function viewReady() {
 }
 
 // ---------- navegacao ----------
-const TABS = { home: ["Início", viewHome, "🏠"], projects: ["Projetos", viewProjects, "📁"], ready: ["Vídeos prontos", viewReady, "🎬"], cuts: ["Cortes", viewCuts, "✂️"], music: ["Músicas", viewMusic, "🎵"], new: ["Novo projeto", viewNew, "➕"], channels: ["Canais", viewChannels, "📡"], voices: ["Vozes", viewVoices, "🎙"] };
+const TABS = { home: ["Início", viewHome, "🏠"], projects: ["Projetos", viewProjects, "📁"], ready: ["Vídeos prontos", viewReady, "🎬"], cuts: ["Cortes", viewCuts, "✂️"], music: ["Músicas", viewMusic, "🎵"], new: ["Novo projeto", viewNew, "➕"], ambient: ["Ambiente", viewAmbient, "🌧"], channels: ["Canais", viewChannels, "📡"], voices: ["Vozes", viewVoices, "🎙"] };
 function setTab(t) {
   tab = t;
   clearInterval(poll);
