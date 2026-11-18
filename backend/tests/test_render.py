@@ -22,7 +22,16 @@ def test_ass_timing_covers_full_duration():
 
 
 def test_ass_escapes_override_braces():
-    assert "{" not in render.build_ass("texto {b}x{/b}", 2.0).split("[Events]")[1].split("Default,,0,0,0,,")[1]
+    import re
+    text = render.build_ass("texto {b}x{/b}", 2.0).split("[Events]")[1].split("Default,,0,0,0,,")[1]
+    assert "{" not in re.sub(r"\{\\kf\d+\}", "", text)
+
+
+def test_karaoke_word_times_sum_to_phrase_duration():
+    import re
+    k = render.karaoke("Imagine pegar uma pequena colher", 3.0)
+    cs = [int(x) for x in re.findall(r"\\kf(\d+)", k)]
+    assert len(cs) == 5 and abs(sum(cs) - 300) <= 1 and cs[0] > 0
 
 
 @pytest.mark.parametrize("cam", ["slow_zoom_in", "slow_zoom_out", "pan_left", "pan_right", "static", "desconhecido"])
