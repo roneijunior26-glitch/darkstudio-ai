@@ -74,6 +74,25 @@ async function signUrls(keys) {
   }
 }
 const autoQueued = new Set(); // projetos cuja geracao pendente ja foi enfileirada automaticamente nesta sessao
+let pickScene = null;
+const imgPicker = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp", style: "display:none" });
+document.body.append(imgPicker); // fica fora da lista (que se atualiza sozinha), senao o seletor de arquivo se perderia
+imgPicker.addEventListener("change", async () => {
+  const f = imgPicker.files[0], t = pickScene; imgPicker.value = ""; pickScene = null;
+  if (!f || !t) return;
+  try {
+    if (f.size > 20 * 1024 * 1024) throw new Error("Imagem maior que 20 MB.");
+    const key = `${user.id}/uploads/${crypto.randomUUID()}.${f.type === "image/png" ? "png" : f.type === "image/webp" ? "webp" : "jpg"}`;
+    const up = await sb.storage.from("media").upload(key, f, { contentType: f.type || "image/jpeg" });
+    if (up.error) throw up.error;
+    const [asset] = await load(sb.from("media_assets").insert({ user_id: user.id, project_id: t.pid, scene_id: t.scene.id, kind: "image", storage_backend: "supabase", storage_key: key, bytes: f.size, provider: "upload", is_intermediate: true, license: "imagem enviada pelo usuario" }).select("id"));
+    await load(sb.from("scenes").update({ image_asset_id: asset.id }).eq("id", t.scene.id).select("id"));
+    toast(t.scene.image ? "Imagem trocada. Clique em “Montar vídeo de novo” para aplicar." : "Imagem da cena definida.");
+    viewProjects().catch(fail);
+  } catch (e) { fail(e); }
+});
+const useOwnImage = (scene, pid) => { pickScene = { scene, pid }; imgPicker.click(); };
+
 async function redoImage(scene, pid) {
   try {
     const np = window.prompt("Descrição da imagem (edite se quiser mudar; deixe igual para sortear outra versão):", scene.image_prompt || "");
@@ -226,7 +245,9 @@ async function viewProjects() {
           sc ? h("div", { class: "scenes" }, sc.length ? sc.map((x) => h("div", { class: "scene" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
             h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`),
-              x.image ? h("button", { class: "ghost", style: "margin-top:6px;padding:4px 12px;font-size:12px", onclick: () => redoImage(x, p.id) }, "↻ Refazer imagem") : null))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null));
+              h("div", { class: "row", style: "gap:8px;margin-top:6px" },
+                x.image ? h("button", { class: "ghost", style: "padding:4px 12px;font-size:12px;flex:none;min-width:0", onclick: () => redoImage(x, p.id) }, "↻ Refazer imagem") : null,
+                h("button", { class: "ghost", style: "padding:4px 12px;font-size:12px;flex:none;min-width:0", onclick: () => useOwnImage(x, p.id) }, "📁 Usar minha imagem"))))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null));
       }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
   };
   await draw();
