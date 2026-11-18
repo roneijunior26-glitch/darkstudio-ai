@@ -74,6 +74,26 @@ async function signUrls(keys) {
   }
 }
 const autoQueued = new Set(); // projetos cuja geracao pendente ja foi enfileirada automaticamente nesta sessao
+async function redoImage(scene, pid) {
+  try {
+    const np = window.prompt("Descrição da imagem (edite se quiser mudar; deixe igual para sortear outra versão):", scene.image_prompt || "");
+    if (np === null || !np.trim()) return;
+    await load(sb.from("scenes").update({ image_prompt: np.trim(), image_asset_id: null }).eq("id", scene.id).select("id"));
+    await load(sb.from("tasks").insert({ user_id: user.id, project_id: pid, type: "generate_image", status: "QUEUED", payload: { scene_id: scene.id }, idempotency_key: `img:${scene.id}:${Date.now()}` }).select("id"));
+    toast("Nova imagem na fila (gasta 1 imagem da cota). Depois clique em “Montar vídeo de novo”.");
+    viewProjects().catch(fail);
+  } catch (e) { fail(e); }
+}
+
+async function rerender(pid) {
+  try {
+    await load(sb.from("tasks").insert({ user_id: user.id, project_id: pid, type: "render_final", status: "QUEUED", payload: {}, idempotency_key: `render:${pid}:${Date.now()}`, timeout_s: 3600 }).select("id"));
+    await load(sb.from("projects").update({ status: "rendering" }).eq("id", pid).select("id"));
+    toast("Montagem do vídeo na fila.");
+    viewProjects().catch(fail);
+  } catch (e) { fail(e); }
+}
+
 async function enqueueMissing(projectId, sc) {
   const mk = (x, type, pre) => ({ user_id: user.id, project_id: projectId, type, status: "QUEUED", payload: { scene_id: x.id }, idempotency_key: `${pre}:${x.id}` });
   const rows = [...sc.filter((x) => !x.image).map((x) => mk(x, "generate_image", "img")), ...sc.filter((x) => !x.audio_asset_id).map((x) => mk(x, "generate_audio", "aud"))];
@@ -201,10 +221,12 @@ async function viewProjects() {
               ev.target.disabled = true;
               try { const { data, error } = await sb.rpc("retry_failed_tasks", { p_project: p.id }); if (error) throw error; toast(`${data} tarefa(s) devolvida(s) à fila.`); viewProjects().catch(fail); } catch (e) { fail(e); ev.target.disabled = false; }
             } }, "Tentar de novo as que falharam") : null,
+            done && sc ? h("button", { class: "ghost", style: "flex:none;min-width:0", title: "Use depois de refazer imagens", onclick: () => rerender(p.id) }, "Montar vídeo de novo") : null,
             deleteProjectBtn(p, () => viewProjects().catch(fail))),
           sc ? h("div", { class: "scenes" }, sc.length ? sc.map((x) => h("div", { class: "scene" },
             x.image && signed.get(x.image.storage_key) ? h("img", { src: signed.get(x.image.storage_key).url, loading: "lazy", class: "thumb", alt: "" }) : h("div", { class: "thumb ph" }, x.image ? "…" : "sem imagem"),
-            h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`)))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null));
+            h("div", {}, h("div", {}, `${x.position}. ${x.narration_text}`), h("div", { class: "mut" }, `🎨 ${x.image_prompt} · ${x.duration_s ? `🔊 ${x.duration_s}s` : `~${x.est_duration_s}s`}`),
+              x.image ? h("button", { class: "ghost", style: "margin-top:6px;padding:4px 12px;font-size:12px", onclick: () => redoImage(x, p.id) }, "↻ Refazer imagem") : null))) : h("p", { class: "mut" }, "Ainda sem cenas.")) : null));
       }) : h("p", { class: "mut" }, "Nenhum projeto ainda. Crie o primeiro em “Novo projeto”.")));
   };
   await draw();

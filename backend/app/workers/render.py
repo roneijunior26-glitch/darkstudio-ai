@@ -29,6 +29,19 @@ def split_phrases(text: str, max_words: int = 7) -> list[str]:
     return out
 
 
+def karaoke(phrase: str, dur: float) -> str:
+    """Marca a palavra dita (efeito karaoke \\kf): o tempo de cada palavra e proporcional ao tamanho dela."""
+    words = phrase.split()
+    weights = [len(w) + 1 for w in words]
+    total_cs, acc, out, prev = max(int(round(dur * 100)), len(words)), 0, [], 0
+    for w, wt in zip(words, weights):
+        acc += wt
+        cum = round(total_cs * acc / sum(weights))
+        out.append(f"{{\\kf{max(cum - prev, 1)}}}{w}")
+        prev = cum
+    return " ".join(out)
+
+
 def build_ass(text: str, duration: float) -> str:
     """Legendas cronometradas por proporcao de caracteres sobre a duracao REAL do audio."""
     phrases = split_phrases(text)
@@ -37,12 +50,12 @@ def build_ass(text: str, duration: float) -> str:
     for p in phrases:
         d = duration * len(p) / total
         safe = p.replace("{", "(").replace("}", ")").replace("\\", "")
-        lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(t + d)},Default,,0,0,0,,{safe}")
+        lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(t + d)},Default,,0,0,0,,{karaoke(safe, d)}")
         t += d
     return ("[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n[V4+ Styles]\n"
             "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,"
             "StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
-            "Style: Default,DejaVu Sans,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,120,120,90,1\n\n"
+            "Style: Default,DejaVu Sans,56,&H0000D7FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,240,240,90,1\n\n"
             "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n" + "\n".join(lines) + "\n")
 
 
@@ -67,7 +80,7 @@ def zoompan(camera: str, frames: int) -> str:
 
 def clip_filter(camera: str, transition: str, duration: float, ass_path: str) -> str:
     frames = round(duration * FPS)
-    chain = [f"crop=iw:trunc(iw*9/16/2)*2", "scale=2880:-2:flags=lanczos", f"zoompan={zoompan(camera, frames)}", "unsharp=5:5:0.7:5:5:0.0", "format=yuv420p"]
+    chain = ["crop=iw*0.97:ih*0.97", f"crop=iw:trunc(iw*9/16/2)*2", "scale=2880:-2:flags=lanczos", f"zoompan={zoompan(camera, frames)}", "unsharp=5:5:0.7:5:5:0.0", "format=yuv420p"]
     if transition == "fade":
         chain += ["fade=t=in:st=0:d=0.3", f"fade=t=out:st={max(duration - 0.3, 0):.2f}:d=0.3"]
     chain.append(f"subtitles={ass_path}")
